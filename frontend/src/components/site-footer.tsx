@@ -9,21 +9,21 @@ import Link from "next/link";
 export function SiteFooter() {
   return (
     <motion.footer
-      className="mt-32 border-t border-border bg-muted/30"
+      className="border-t border-border bg-muted/30"
       initial={{ opacity: 0 }}
       whileInView={{ opacity: 1 }}
       viewport={{ once: true }}
       transition={{ duration: 0.5 }}
     >
-      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
         <div className="flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-sm font-semibold text-foreground">
-              Facial Classification
+              Fecal Classification
             </p>
-            <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              Register and sign in to upload microscopy and review staged model
-              outputs in a workflow built for clinicians.
+            <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+              Upload microscopy slides and review staged model outputs in a
+              workflow built for clinicians.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -37,18 +37,23 @@ export function SiteFooter() {
             <Link
               href="/login"
               data-cursor-hover
-              className={cn(buttonVariants({ variant: "outline", size: "default" }))}
+              className={cn(
+                buttonVariants({ variant: "outline", size: "default" })
+              )}
             >
               Sign in
             </Link>
           </div>
         </div>
         <Separator className="my-10" />
-        <div className="flex flex-col gap-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} Facial Classification. All rights reserved.</p>
-          <p className="max-w-xl sm:text-right">
-            For institutional support, contact your IT or privacy office; this
-            demo does not process real patient data.
+        <div className="flex flex-col gap-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            © {new Date().getFullYear()} Fecal Classification. All rights
+            reserved.
+          </p>
+          <p className="max-w-lg sm:text-right">
+            This demo does not process real patient data. Contact your
+            institution&apos;s IT or privacy office for production guidance.
           </p>
         </div>
       </div>

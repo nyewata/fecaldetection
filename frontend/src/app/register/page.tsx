@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Register",
-  description: "Create a Facial Classification account for microscopy predictions.",
+  description: "Create a Fecal Classification account to upload slides and run predictions.",
 };
 
 export default async function RegisterPage() {

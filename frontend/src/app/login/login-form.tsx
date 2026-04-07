@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { cn } from "@/lib/utils";
+import { Microscope } from "lucide-react";
 import Link from "next/link";
 import { useActionState } from "react";
 import { signInWithEmail, type AuthFormState } from "./actions";
@@ -25,15 +26,18 @@ export function LoginForm() {
 
   return (
     <Card className="w-full max-w-md border-border/80 shadow-sm">
-      <CardHeader className="space-y-1">
+      <CardHeader className="items-center gap-3 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl border border-border bg-muted/50">
+          <Microscope className="size-6 text-foreground/70" aria-hidden />
+        </div>
         <CardTitle className="text-2xl font-semibold tracking-tight">
           Welcome back
         </CardTitle>
-        <CardDescription>
-          Sign in to open your dashboard, uploads, and prediction workflow.
+        <CardDescription className="text-balance">
+          Sign in to open your clinician dashboard and prediction workflow.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         <form className="space-y-4" action={formAction}>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
@@ -43,6 +47,7 @@ export function LoginForm() {
               type="email"
               autoComplete="email"
               placeholder="you@hospital.org"
+              className="h-9"
               required
             />
           </div>
@@ -54,15 +59,16 @@ export function LoginForm() {
               type="password"
               autoComplete="current-password"
               placeholder="••••••••"
+              className="h-9"
               required
             />
           </div>
           {state?.error ? (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
               {state.error}
             </p>
           ) : null}
-          <Button type="submit" className="w-full" disabled={pending}>
+          <Button type="submit" className="h-9 w-full" disabled={pending}>
             {pending ? "Signing in…" : "Sign in"}
           </Button>
         </form>

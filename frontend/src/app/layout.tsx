@@ -15,15 +15,15 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Facial Classification — Clinical microscopy assistant",
-    template: "%s · Facial Classification",
+    default: "Fecal Classification — Clinical microscopy assistant",
+    template: "%s · Fecal Classification",
   },
   description:
-    "Register to upload microscopic images, run staged facial detection, binary classification, and multi-class overlays designed for clinical workflows.",
+    "Upload microscopic slides, run staged fecal detection, binary classification, and multi-class overlays — built for clinical workflows.",
   openGraph: {
-    title: "Facial Classification",
+    title: "Fecal Classification",
     description:
-      "Staged AI assistance for microscopy: facial screening, binary review, and localized multi-class findings for licensed clinicians.",
+      "AI-assisted microscopy: fecal screening, binary review, and localized multi-class findings for licensed clinicians.",
   },
 };
 

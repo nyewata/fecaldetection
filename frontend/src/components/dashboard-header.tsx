@@ -1,6 +1,6 @@
 import { DashboardSignOut } from "@/components/dashboard-sign-out";
 import { cn } from "@/lib/utils";
-import { Microscope } from "lucide-react";
+import { Home, Microscope } from "lucide-react";
 import Link from "next/link";
 
 type DashboardHeaderProps = {
@@ -25,7 +25,7 @@ export function DashboardHeader({ user }: DashboardHeaderProps) {
             className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight text-foreground transition-opacity hover:opacity-80"
           >
             <Microscope className="size-5 shrink-0 text-primary" aria-hidden />
-            <span className="truncate">Facial Classification</span>
+            <span className="truncate">Fecal Classification</span>
           </Link>
           <span
             className="hidden shrink-0 rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground sm:inline"
@@ -41,18 +41,14 @@ export function DashboardHeader({ user }: DashboardHeaderProps) {
         >
           <Link
             href="/"
-            className="hidden text-sm text-muted-foreground transition-colors hover:text-foreground sm:inline"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
-            Marketing site
+            <Home className="size-3.5" aria-hidden />
+            <span className="hidden sm:inline">Home</span>
           </Link>
-          <Link
-            href="/"
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground sm:hidden"
-          >
-            Home
-          </Link>
+          <span className="h-4 w-px bg-border" aria-hidden />
           <span
-            className="hidden max-w-[min(200px,28vw)] truncate text-sm text-muted-foreground md:inline"
+            className="hidden max-w-[min(180px,24vw)] truncate text-sm text-muted-foreground md:inline"
             title={user.email}
           >
             {user.name || user.email}

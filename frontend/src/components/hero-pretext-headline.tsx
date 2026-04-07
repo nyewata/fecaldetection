@@ -9,7 +9,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const HEADLINE =
-  "Staged clinical insight from every microscopic frame.";
+  "AI-powered fecal screening for every microscopic slide.";
 
 function fontSpecForWidth(containerWidth: number): {
   font: string;

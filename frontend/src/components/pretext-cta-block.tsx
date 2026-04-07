@@ -9,7 +9,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const CTA_TEXT =
-  "Let's bring clarity to every microscopic frame.";
+  "Bring clinical clarity to every microscopic slide.";
 
 function fontForWidth(w: number): {
   font: string;

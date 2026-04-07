@@ -20,23 +20,23 @@ type WorkflowStep = {
 const workflowSteps: readonly WorkflowStep[] = [
   {
     step: "1",
-    title: "Facial vs non-facial",
+    title: "Fecal vs non-fecal",
     description:
-      "Upload a microscopic field. The first model screens for facial tissue versus non-facial regions so downstream steps only run when relevant.",
+      "Upload a microscopic field. The first model screens for fecal matter versus non-fecal regions so downstream steps only fire when relevant.",
     icon: Microscope,
   },
   {
     step: "2",
     title: "Binary classification",
     description:
-      "When facial signal is present, a dedicated binary classifier refines the case before multi-label review—keeping the path structured and auditable.",
+      "When fecal signal is detected, a dedicated binary classifier refines the finding before multi-label review — keeping the path structured and auditable.",
     icon: Layers,
   },
   {
     step: "3",
     title: "Multi-class overlays",
     description:
-      "Up to ten fine-grained categories can be surfaced with localized markers on the image, so clinicians see where the model attended—not just a single score.",
+      "Up to ten fine-grained categories surfaced with localized markers on the image, so you see where the model attended — not just a single score.",
     icon: Sparkles,
   },
 ];

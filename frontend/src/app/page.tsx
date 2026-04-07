@@ -15,7 +15,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { ArrowDown } from "lucide-react";
+import {
+  ArrowDown,
+  ImageUp,
+  Layers,
+  Lock,
+  ShieldCheck,
+} from "lucide-react";
 import Link from "next/link";
 
 export default function Home() {
@@ -25,31 +31,32 @@ export default function Home() {
       <SiteHeader />
 
       <main className="flex-1">
+        {/* ─── Hero ─── */}
         <section
-          className="relative mx-auto max-w-6xl px-4 pt-16 pb-32 sm:px-6 sm:pt-24 sm:pb-40 lg:px-8 lg:pt-28 lg:pb-48"
+          className="relative mx-auto max-w-6xl px-4 pt-20 pb-28 sm:px-6 sm:pt-28 sm:pb-36 lg:px-8 lg:pt-32 lg:pb-44"
           aria-labelledby="hero-heading"
         >
           <HeroPretextHeadline />
-          <ScrollFadeIn className="mt-12 max-w-2xl" delay={0.15}>
+          <ScrollFadeIn className="mt-10 max-w-2xl sm:mt-12" delay={0.15}>
             <HeroLeadParagraph />
           </ScrollFadeIn>
           <ScrollFadeIn
-            className="mt-12 flex flex-wrap items-center gap-3"
+            className="mt-10 flex flex-wrap items-center gap-3 sm:mt-12"
             delay={0.25}
           >
             <Link
               href="/register"
               data-cursor-hover
-              className={cn(buttonVariants({ size: "lg" }), "h-10 px-6")}
+              className={cn(buttonVariants({ size: "lg" }), "h-11 px-7")}
             >
-              Register to predict
+              Get started free
             </Link>
             <Link
               href="/login"
               data-cursor-hover
               className={cn(
                 buttonVariants({ variant: "outline", size: "lg" }),
-                "h-10 px-6"
+                "h-11 px-7"
               )}
             >
               Sign in
@@ -59,118 +66,140 @@ export default function Home() {
               data-cursor-hover
               className={cn(
                 buttonVariants({ variant: "ghost", size: "lg" }),
-                "link-animated h-10 gap-2 text-muted-foreground"
+                "link-animated h-11 gap-2 text-muted-foreground"
               )}
             >
-              Learn more
+              How it works
               <ArrowDown className="size-4" />
             </a>
           </ScrollFadeIn>
         </section>
 
+        {/* ─── About ─── */}
         <section
           id="about"
-          className="scroll-mt-24 border-y border-border bg-muted/20 py-28 sm:py-40"
+          className="scroll-mt-24 border-y border-border bg-muted/20 py-24 sm:py-32 lg:py-36"
           aria-labelledby="about-heading"
         >
           <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
             <ScrollFadeIn>
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                Why Fecal Classification
+              </p>
               <h2
                 id="about-heading"
-                className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl"
+                className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl"
               >
-                Built for clinical workflows
+                Built for clinical lab workflows
               </h2>
-              <p className="mt-6 max-w-3xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-                This application is intended for trained providers and laboratory
-                staff—not for public self-diagnosis. Models assist with
-                triage-style signals; interpretation, documentation, and treatment
-                decisions remain your responsibility. Production use should follow
-                your institution&apos;s policies for HIPAA, GDPR, or equivalent
-                frameworks.
+              <p className="mt-5 max-w-3xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+                Designed for trained providers and laboratory staff — not for
+                public self-diagnosis. Models provide triage-level signals while
+                interpretation, documentation, and treatment decisions remain
+                your responsibility.
               </p>
             </ScrollFadeIn>
             <ScrollFadeIn
-              className="mt-20 grid gap-8 sm:grid-cols-2"
+              className="mt-16 grid gap-5 sm:grid-cols-2 lg:grid-cols-4"
               delay={0.08}
             >
-              <Card
-                data-cursor-hover
-                className="border-border/80 shadow-none transition-shadow hover:shadow-md"
-              >
-                <CardHeader>
-                  <CardTitle className="text-base">What you upload</CardTitle>
-                  <CardDescription>
-                    Microscopic images prepared according to your lab protocol.
-                    The product does not replace standard quality control or
-                    staining review.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-              <Card
-                data-cursor-hover
-                className="border-border/80 shadow-none transition-shadow hover:shadow-md"
-              >
-                <CardHeader>
-                  <CardTitle className="text-base">What you get</CardTitle>
-                  <CardDescription>
-                    A gated pipeline: facial detection unlocks binary scoring,
-                    which can unlock a richer taxonomy with visual overlays for
-                    transparency.
-                  </CardDescription>
-                </CardHeader>
-              </Card>
+              {([
+                {
+                  icon: ImageUp,
+                  title: "Slide uploads",
+                  desc: "Drag-and-drop microscopic images prepared with your lab\u2019s standard staining protocol.",
+                },
+                {
+                  icon: Layers,
+                  title: "Staged pipeline",
+                  desc: "Fecal screening unlocks binary scoring, which gates richer multi-class predictions.",
+                },
+                {
+                  icon: ShieldCheck,
+                  title: "Visual overlays",
+                  desc: "On-image markers show where models attended — full transparency, not just a score.",
+                },
+                {
+                  icon: Lock,
+                  title: "Audit-ready",
+                  desc: "Every prediction is logged. Follow your institution\u2019s HIPAA, GDPR, or equivalent policy.",
+                },
+              ] as const).map((c) => (
+                <Card
+                  key={c.title}
+                  data-cursor-hover
+                  className="border-border/80 shadow-none transition-shadow duration-300 hover:shadow-lg"
+                >
+                  <CardHeader className="gap-3">
+                    <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-muted/50">
+                      <c.icon className="size-5 text-foreground/70" aria-hidden />
+                    </div>
+                    <CardTitle className="text-base">{c.title}</CardTitle>
+                    <CardDescription className="leading-relaxed">
+                      {c.desc}
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              ))}
             </ScrollFadeIn>
           </div>
         </section>
 
+        {/* ─── Workflow ─── */}
         <section
           id="workflow"
-          className="scroll-mt-24 py-28 sm:py-40"
+          className="scroll-mt-24 py-24 sm:py-32 lg:py-36"
           aria-labelledby="workflow-heading"
         >
           <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
             <ScrollFadeIn>
               <div className="max-w-2xl space-y-4">
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                  Pipeline
+                </p>
                 <h2
                   id="workflow-heading"
                   className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl"
                 >
-                  Three-stage pipeline
+                  Three stages, one clear path
                 </h2>
                 <WordHoverBlock
-                  text="Each stage is designed to narrow uncertainty before showing detailed class predictions."
+                  text="Each stage narrows uncertainty before revealing detailed class predictions."
                   className="text-base leading-relaxed text-muted-foreground sm:text-lg"
                 />
               </div>
             </ScrollFadeIn>
-            <div className="mt-20 md:mt-28">
+            <div className="mt-16 md:mt-24">
               <WorkflowStages />
             </div>
           </div>
         </section>
 
+        {/* ─── For clinicians ─── */}
         <section
           id="clinicians"
-          className="scroll-mt-24 border-t border-border bg-muted/15 py-28 sm:py-40"
+          className="scroll-mt-24 border-t border-border bg-muted/15 py-24 sm:py-32 lg:py-36"
           aria-labelledby="clinicians-heading"
         >
           <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
             <ScrollFadeIn>
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                Access
+              </p>
               <h2
                 id="clinicians-heading"
-                className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl"
+                className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl"
               >
-                For clinicians
+                Ready when you are
               </h2>
-              <p className="mt-6 max-w-3xl text-base leading-relaxed text-muted-foreground">
-                Prediction features are available after you{" "}
+              <p className="mt-5 max-w-3xl text-base leading-relaxed text-muted-foreground">
+                Predictions are available after you{" "}
                 <Link
                   href="/register"
                   data-cursor-hover
                   className="link-animated font-medium text-foreground"
                 >
-                  register
+                  create an account
                 </Link>{" "}
                 and{" "}
                 <Link
@@ -180,31 +209,31 @@ export default function Home() {
                 >
                   sign in
                 </Link>
-                . This landing experience is informational only—no uploads or
-                inference run here.
+                . This landing page is informational — no uploads or inference
+                run here.
               </p>
             </ScrollFadeIn>
 
-            <ScrollFadeIn className="mt-20 space-y-8" delay={0.1}>
+            <ScrollFadeIn className="mt-16 space-y-8" delay={0.1}>
               <PretextCtaBlock />
               <p className="max-w-xl text-sm text-muted-foreground">
-                When you are ready, create an account to unlock uploads and the
-                full staged review flow.
+                Create an account to unlock uploads and the full staged review
+                workflow.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Link
                   href="/register"
                   data-cursor-hover
-                  className={cn(buttonVariants({ size: "lg" }), "h-10 px-6")}
+                  className={cn(buttonVariants({ size: "lg" }), "h-11 px-7")}
                 >
-                  Get started
+                  Get started free
                 </Link>
                 <Link
                   href="/login"
                   data-cursor-hover
                   className={cn(
                     buttonVariants({ variant: "outline", size: "lg" }),
-                    "h-10 px-6"
+                    "h-11 px-7"
                   )}
                 >
                   Sign in

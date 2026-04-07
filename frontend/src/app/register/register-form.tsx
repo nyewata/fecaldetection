@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { authClient } from "@/lib/auth/client";
 import { cn } from "@/lib/utils";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Microscope } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef } from "react";
@@ -49,16 +49,19 @@ export function RegisterForm() {
 
   return (
     <Card className="w-full max-w-md border-border/80 shadow-sm">
-      <CardHeader className="space-y-1">
+      <CardHeader className="items-center gap-3 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl border border-border bg-muted/50">
+          <Microscope className="size-6 text-foreground/70" aria-hidden />
+        </div>
         <CardTitle className="text-2xl font-semibold tracking-tight">
           Create your account
         </CardTitle>
-        <CardDescription>
-          Register to access the clinician dashboard, uploads, and staged
-          prediction workflow.
+        <CardDescription className="text-balance">
+          Register to access slide uploads, staged predictions, and the
+          clinician dashboard.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         {success ? (
           <div
             className="flex flex-col items-center gap-3 rounded-lg border border-border bg-muted/30 px-6 py-10 text-center"
@@ -71,15 +74,16 @@ export function RegisterForm() {
             <p className="text-base font-medium text-foreground">
               Account created successfully
             </p>
-            <p className="text-sm text-muted-foreground">
-              You will be redirected to sign in in a few seconds. Use your new
-              email and password to log in.
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Redirecting you to sign in shortly. Use your new email and password
+              to log in.
             </p>
-            <p className="text-xs text-muted-foreground">
-              <Link href="/login" className="font-medium underline-offset-4 hover:underline">
-                Go to sign in now
-              </Link>
-            </p>
+            <Link
+              href="/login"
+              className="text-xs font-medium text-foreground underline-offset-4 hover:underline"
+            >
+              Go to sign in now
+            </Link>
           </div>
         ) : (
           <form className="space-y-4" action={formAction}>
@@ -90,6 +94,7 @@ export function RegisterForm() {
                 name="name"
                 autoComplete="name"
                 placeholder="Dr. Jane Smith"
+                className="h-9"
                 required
               />
             </div>
@@ -101,6 +106,7 @@ export function RegisterForm() {
                 type="email"
                 autoComplete="email"
                 placeholder="you@hospital.org"
+                className="h-9"
                 required
               />
             </div>
@@ -112,16 +118,17 @@ export function RegisterForm() {
                 type="password"
                 autoComplete="new-password"
                 placeholder="••••••••"
+                className="h-9"
                 required
                 minLength={8}
               />
             </div>
             {state != null && "error" in state ? (
-              <p className="text-sm text-destructive" role="alert">
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
                 {state.error}
               </p>
             ) : null}
-            <Button type="submit" className="w-full" disabled={pending}>
+            <Button type="submit" className="h-9 w-full" disabled={pending}>
               {pending ? "Creating account…" : "Create account"}
             </Button>
           </form>

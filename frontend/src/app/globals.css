@@ -125,7 +125,7 @@
     @apply bg-background text-foreground;
   }
   html {
-    @apply font-sans;
+    @apply font-sans scroll-smooth;
   }
 
   html[data-custom-cursor="on"] * {
@@ -141,6 +141,12 @@
     background: oklch(0.985 0 0 / 0.2);
     color: oklch(0.985 0 0);
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
 }
 
 @layer utilities {
@@ -152,8 +158,11 @@
     @apply bg-[length:100%_1px];
   }
 
-  /* Base for gradient underline; combine with `group-hover/pretext-line:bg-[length:100%_2px]` on same el or parent group */
   .pretext-underline-inner {
     @apply bg-gradient-to-r from-foreground to-foreground/70 bg-[length:0%_2px] bg-left-bottom bg-no-repeat transition-[background-size] duration-500 ease-out;
+  }
+
+  .text-balance {
+    text-wrap: balance;
   }
 }
