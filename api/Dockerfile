@@ -24,8 +24,8 @@ COPY . .
 RUN sed -i 's/\r$//' /app/entrypoint.sh \
     && chmod +x /app/entrypoint.sh
 
-EXPOSE 7136
+EXPOSE 7137
 
 ENTRYPOINT ["sh", "/app/entrypoint.sh"]
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7136"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7137"]

@@ -28,7 +28,7 @@ app.add_middleware(
     allow_origins=[
         "https://uticlassification.app",
         "https://www.uticlassification.app",
-        "http://localhost:7136",
+        "http://localhost:7137",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -299,4 +299,4 @@ async def process_models(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7136)
+    uvicorn.run(app, host="0.0.0.0", port=7137)
