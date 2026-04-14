@@ -1,4 +1,7 @@
-# Local secrets — never commit (Neon URLs, cookies, etc.)
+.venv/
+.DS_Store
+
+*.keras# Local secrets — never commit (Neon URLs, cookies, etc.)
 .env
 .env*.local
 
