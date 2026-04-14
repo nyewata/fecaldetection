@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { GitHubIcon } from "@/components/icons/github-icon";
 import {
   ArrowDown,
   Box,
@@ -74,6 +75,19 @@ export default function Home() {
             >
               Sign in
             </Link>
+            <a
+              href="https://github.com/ABCEducationalAgency/fecaldetection"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-cursor-hover
+              className={cn(
+                buttonVariants({ variant: "outline", size: "lg" }),
+                "h-11 gap-2 px-7"
+              )}
+            >
+              <GitHubIcon className="size-4" />
+              Source code
+            </a>
             <a
               href="#about"
               data-cursor-hover
@@ -236,12 +250,12 @@ export default function Home() {
                 </Card>
               ))}
               <Card className="flex items-center justify-center border-dashed border-border/80 shadow-none">
-                <CardHeader className="items-center gap-1 text-center">
+                <div className="flex flex-col items-center gap-1.5 py-6 text-center">
                   <Vote className="size-5 text-muted-foreground" aria-hidden />
-                  <CardDescription className="text-xs font-medium">
+                  <p className="text-xs font-medium text-muted-foreground">
                     Majority vote
-                  </CardDescription>
-                </CardHeader>
+                  </p>
+                </div>
               </Card>
             </ScrollFadeIn>
             <ScrollFadeIn className="mt-8" delay={0.1}>

@@ -10,6 +10,7 @@ import {
 import { authClient } from "@/lib/auth/client";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import { GitHubIcon } from "@/components/icons/github-icon";
 import { LayoutDashboard, Menu } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -18,6 +19,7 @@ const nav = [
   { href: "/#workflow", label: "Pipeline" },
   { href: "/models", label: "Models" },
   { href: "/learn", label: "Learn" },
+  { href: "https://github.com/ABCEducationalAgency/fecaldetection", label: "GitHub", external: true },
 ] as const;
 
 export function SiteHeader() {
@@ -58,16 +60,30 @@ export function SiteHeader() {
           className="hidden items-center gap-8 text-sm text-muted-foreground md:flex"
           aria-label="Primary"
         >
-          {nav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              data-cursor-hover
-              className="link-animated transition-colors hover:text-foreground"
-            >
-              {item.label}
-            </Link>
-          ))}
+          {nav.map((item) =>
+            "external" in item && item.external ? (
+              <a
+                key={item.href}
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-cursor-hover
+                className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+              >
+                <GitHubIcon className="size-3.5" />
+                {item.label}
+              </a>
+            ) : (
+              <Link
+                key={item.href}
+                href={item.href}
+                data-cursor-hover
+                className="link-animated transition-colors hover:text-foreground"
+              >
+                {item.label}
+              </Link>
+            )
+          )}
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-3">
@@ -133,17 +149,32 @@ export function SiteHeader() {
                 <SheetTitle>Menu</SheetTitle>
               </SheetHeader>
               <nav className="mt-8 flex flex-col gap-1" aria-label="Mobile">
-                {nav.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    data-cursor-hover
-                    className="rounded-lg px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
+                {nav.map((item) =>
+                  "external" in item && item.external ? (
+                    <a
+                      key={item.href}
+                      href={item.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-cursor-hover
+                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      <GitHubIcon className="size-4" />
+                      {item.label}
+                    </a>
+                  ) : (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      data-cursor-hover
+                      className="rounded-lg px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  )
+                )}
                 <div className="my-4 h-px bg-border" role="separator" />
                 {signedIn ? (
                   <Link

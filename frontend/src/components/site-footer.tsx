@@ -4,6 +4,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import { GitHubIcon } from "@/components/icons/github-icon";
 import Link from "next/link";
 
 export function SiteFooter() {
@@ -43,6 +44,19 @@ export function SiteFooter() {
             >
               Sign in
             </Link>
+            <a
+              href="https://github.com/ABCEducationalAgency/fecaldetection"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-cursor-hover
+              className={cn(
+                buttonVariants({ variant: "outline", size: "default" }),
+                "gap-2"
+              )}
+            >
+              <GitHubIcon className="size-4" />
+              GitHub
+            </a>
           </div>
         </div>
         <Separator className="my-10" />
@@ -51,10 +65,22 @@ export function SiteFooter() {
             © {new Date().getFullYear()} Fecal Classification. All rights
             reserved.
           </p>
-          <p className="max-w-lg sm:text-right">
-            This demo does not process real patient data. Contact your
-            institution&apos;s IT or privacy office for production guidance.
-          </p>
+          <div className="flex items-center gap-4 sm:text-right">
+            <a
+              href="https://github.com/ABCEducationalAgency/fecaldetection"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-cursor-hover
+              className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
+            >
+              <GitHubIcon className="size-3" />
+              Source code
+            </a>
+            <span className="h-3 w-px bg-border" aria-hidden />
+            <p className="max-w-lg">
+              This demo does not process real patient data.
+            </p>
+          </div>
         </div>
       </div>
     </motion.footer>
