@@ -1,5 +1,5 @@
 services:
-    stage3api:
+    stage-1-2-api:
         build:
             context: api/
             dockerfile: Dockerfile
