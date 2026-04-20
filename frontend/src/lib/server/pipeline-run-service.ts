@@ -93,6 +93,8 @@ type RemoteResultItem = {
   classification?: {
     predicted_class?: unknown;
     max_prob?: unknown;
+    probability?: unknown;
+    class_probabilities?: Record<string, unknown>;
   };
 };
 
@@ -103,12 +105,38 @@ function toRecord(value: unknown): Record<string, unknown> {
   return {};
 }
 
-function toNumberOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
 function toBinaryOrNull(value: unknown): 0 | 1 | null {
   if (value === 0 || value === 1) return value;
+  return null;
+}
+
+function toPercentConfidence(
+  classification: RemoteResultItem["classification"] | undefined,
+): number | null {
+  if (!classification || typeof classification !== "object") return null;
+
+  const predicted = toBinaryOrNull(classification.predicted_class);
+  const probs = classification.class_probabilities;
+  if (
+    probs &&
+    typeof probs === "object" &&
+    predicted !== null &&
+    String(predicted) in probs
+  ) {
+    const raw = (probs as Record<string, unknown>)[String(predicted)];
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      return raw <= 1 ? raw * 100 : raw;
+    }
+  }
+
+  if (
+    typeof classification.max_prob === "number" &&
+    Number.isFinite(classification.max_prob)
+  ) {
+    return classification.max_prob <= 1
+      ? classification.max_prob * 100
+      : classification.max_prob;
+  }
   return null;
 }
 
@@ -152,14 +180,15 @@ function getStage1MajorityClass(run: PredictionPipelineRunRow): 0 | 1 | null {
   let negativeVotes = 0;
   for (const item of results) {
     const cls = toRecord(toRecord(item).classification).predicted_class;
-    if (cls === 1) positiveVotes++;
-    if (cls === 0) negativeVotes++;
+    if (cls === 0) positiveVotes++;
+    if (cls === 1) negativeVotes++;
   }
-  return positiveVotes > negativeVotes ? 1 : 0;
+  return positiveVotes > negativeVotes ? 0 : 1;
 }
 
 function isStage1Positive(run: PredictionPipelineRunRow): boolean {
-  return getStage1MajorityClass(run) === 1;
+  // Stage 1 mapping: 0 = fecal, 1 = non-fecal.
+  return getStage1MajorityClass(run) === 0;
 }
 
 function activeStage(run: PredictionPipelineRunRow): StageNumber | null {
@@ -200,7 +229,7 @@ function buildVoteSummary(
       typeof row.modelFilename === "string" ? row.modelFilename : null;
     if (!modelFilename) continue;
     const predictedClass = toBinaryOrNull(row.classification?.predicted_class);
-    const maxProb = toNumberOrNull(row.classification?.max_prob);
+    const maxProb = toPercentConfidence(row.classification);
     byModel.set(modelFilename, { predictedClass, maxProb });
   }
 
@@ -213,14 +242,17 @@ function buildVoteSummary(
     };
   });
 
-  const positiveVotes = modelVotes.filter((v) => v.predictedClass === 1).length;
-  const negativeVotes = modelVotes.filter((v) => v.predictedClass === 0).length;
+  // Class mapping in this project:
+  // Stage 1: 0=fecal, 1=non-fecal
+  // Stage 2: 0=helminths, 1=non-helminths
+  const positiveVotes = modelVotes.filter((v) => v.predictedClass === 0).length;
+  const negativeVotes = modelVotes.filter((v) => v.predictedClass === 1).length;
 
   return {
     totalModels: expectedModelFilenames.length,
     positiveVotes,
     negativeVotes,
-    majorityClass: positiveVotes > negativeVotes ? 1 : 0,
+    majorityClass: positiveVotes > negativeVotes ? 0 : 1,
     modelVotes,
   };
 }
@@ -293,7 +325,7 @@ async function saveFinishedStage1(params: {
   awaitingStage2Start: boolean;
 }> {
   const voteSummary = buildVoteSummary(params.remote, STAGE1_MODEL_FILENAMES);
-  const isFecal = voteSummary.majorityClass === 1;
+  const isFecal = voteSummary.majorityClass === 0;
   await saveStage1Result({
     runId: params.run.id,
     userId: params.userId,
@@ -317,7 +349,7 @@ async function saveFinishedStage2(params: {
 }> {
   const voteSummary = buildVoteSummary(params.remote, STAGE2_MODEL_FILENAMES);
   const finalOutcome =
-    voteSummary.majorityClass === 1
+    voteSummary.majorityClass === 0
       ? "helminth_positive"
       : "helminth_negative";
   await saveStage2Result({

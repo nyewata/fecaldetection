@@ -69,6 +69,8 @@ type WsPayload = {
     classification?: {
       predicted_class?: number;
       max_prob?: number;
+      probability?: number;
+      class_probabilities?: Record<string, number>;
     };
     index?: number;
     error?: string;
@@ -88,7 +90,7 @@ type ActivityItem = {
   stage: StageNumber;
   modelFilename: string;
   predictedClass: number | null;
-  maxProb: number | null;
+  confidencePct: number | null;
   error: string | null;
 };
 
@@ -115,20 +117,57 @@ function shortModelName(filename: string): string {
     .replace(/^BINARY_/i, "");
 }
 
+function classLabel(stage: StageNumber, predictedClass: number | null): string {
+  if (predictedClass === null) return "Unknown";
+  if (stage === 1) {
+    return predictedClass === 0 ? "Fecal" : "Non-fecal";
+  }
+  return predictedClass === 0 ? "Helminths detected" : "No helminths";
+}
+
+function toConfidencePercent(
+  classification: {
+    predicted_class?: number;
+    max_prob?: number;
+    probability?: number;
+    class_probabilities?: Record<string, number>;
+  } | undefined,
+): number | null {
+  if (!classification) return null;
+  const predictedClass =
+    classification.predicted_class === 0 || classification.predicted_class === 1
+      ? classification.predicted_class
+      : null;
+  if (
+    predictedClass !== null &&
+    classification.class_probabilities &&
+    typeof classification.class_probabilities[String(predictedClass)] === "number"
+  ) {
+    const value = classification.class_probabilities[String(predictedClass)]!;
+    return value <= 1 ? value * 100 : value;
+  }
+  if (typeof classification.max_prob === "number") {
+    return classification.max_prob <= 1
+      ? classification.max_prob * 100
+      : classification.max_prob;
+  }
+  return null;
+}
+
 function buildVoteSummaryFromResults(results: unknown[]): StageVoteSummary {
   let positiveVotes = 0;
   let negativeVotes = 0;
   for (const row of results) {
     const cls = (row as { classification?: { predicted_class?: unknown } })
       .classification?.predicted_class;
-    if (cls === 1) positiveVotes += 1;
-    if (cls === 0) negativeVotes += 1;
+    if (cls === 0) positiveVotes += 1;
+    if (cls === 1) negativeVotes += 1;
   }
   return {
     totalModels: results.length,
     positiveVotes,
     negativeVotes,
-    majorityClass: positiveVotes > negativeVotes ? 1 : 0,
+    majorityClass: positiveVotes > negativeVotes ? 0 : 1,
   };
 }
 
@@ -138,19 +177,31 @@ function summarizePipelineRun(row: PredictionPipelineRunRow): string {
     const vote = row.stage1_vote_summary as
       | { positiveVotes?: number; negativeVotes?: number }
       | null;
-    return `Stage 1 non-fecal (${vote?.positiveVotes ?? 0} positive / ${vote?.negativeVotes ?? 0} negative). Stage 2 skipped.`;
+    return `Stage 1 result: Non-fecal (${vote?.positiveVotes ?? 0} fecal votes / ${vote?.negativeVotes ?? 0} non-fecal votes). Stage 2 skipped.`;
   }
   if (row.stage2_vote_summary) {
     const vote = row.stage2_vote_summary as
       | { positiveVotes?: number; negativeVotes?: number; majorityClass?: number }
       | null;
-    return `Stage 2 majority class ${vote?.majorityClass ?? "?"} (${vote?.positiveVotes ?? 0}/${vote?.negativeVotes ?? 0}).`;
+    const label =
+      vote?.majorityClass === 0
+        ? "Helminths detected"
+        : vote?.majorityClass === 1
+          ? "No helminths"
+          : "Unknown";
+    return `Stage 2 result: ${label} (${vote?.positiveVotes ?? 0} helminths votes / ${vote?.negativeVotes ?? 0} non-helminths votes).`;
   }
   if (row.stage1_vote_summary) {
     const vote = row.stage1_vote_summary as
       | { majorityClass?: number; positiveVotes?: number; negativeVotes?: number }
       | null;
-    return `Stage 1 class ${vote?.majorityClass ?? "?"} (${vote?.positiveVotes ?? 0}/${vote?.negativeVotes ?? 0}).`;
+    const label =
+      vote?.majorityClass === 0
+        ? "Fecal"
+        : vote?.majorityClass === 1
+          ? "Non-fecal"
+          : "Unknown";
+    return `Stage 1 result: ${label} (${vote?.positiveVotes ?? 0} fecal votes / ${vote?.negativeVotes ?? 0} non-fecal votes).`;
   }
   return row.status;
 }
@@ -278,10 +329,7 @@ export function HelminthPredictPanel({
             typeof row.classification?.predicted_class === "number"
               ? row.classification.predicted_class
               : null,
-          maxProb:
-            typeof row.classification?.max_prob === "number"
-              ? row.classification.max_prob
-              : null,
+          confidencePct: toConfidencePercent(row.classification),
           error: null,
         },
         ...prev,
@@ -304,7 +352,7 @@ export function HelminthPredictPanel({
           stage,
           modelFilename: String(row.modelFilename ?? "model"),
           predictedClass: null,
-          maxProb: null,
+          confidencePct: null,
           error: String(row.error ?? "Error"),
         },
         ...prev,
@@ -702,8 +750,9 @@ export function HelminthPredictPanel({
           <CardHeader>
             <CardTitle className="text-base">Stage 1 majority vote</CardTitle>
             <CardDescription>
-              Positive votes: {stage1Vote.positiveVotes} · Negative votes:{" "}
-              {stage1Vote.negativeVotes} · Majority class: {stage1Vote.majorityClass}
+              Fecal votes: {stage1Vote.positiveVotes} · Non-fecal votes:{" "}
+              {stage1Vote.negativeVotes} · Result:{" "}
+              {stage1Vote.majorityClass === 0 ? "Fecal" : "Non-fecal"}
             </CardDescription>
           </CardHeader>
         </Card>
@@ -730,9 +779,9 @@ export function HelminthPredictPanel({
                   <p className="text-destructive">{entry.error}</p>
                 ) : (
                   <p className="text-muted-foreground">
-                    class {entry.predictedClass ?? "?"}
-                    {entry.maxProb !== null
-                      ? ` · max_prob ${entry.maxProb.toExponential(3)}`
+                    {classLabel(entry.stage, entry.predictedClass)}
+                    {entry.confidencePct !== null
+                      ? ` · confidence ${entry.confidencePct.toFixed(1)}%`
                       : ""}
                   </p>
                 )}
@@ -747,16 +796,27 @@ export function HelminthPredictPanel({
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <CheckCircle2 className="size-4 text-emerald-600" aria-hidden />
-              Latest stage payload
+              Latest stage results
             </CardTitle>
             <CardDescription>
-              This reflects live API output before server-side persistence checks.
+              Live model outputs translated into user-friendly labels.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {(preview.results as Array<Record<string, unknown>>).map((row, i) => {
               const fn = String(row.modelFilename ?? "");
               const cls = row.classification as Record<string, unknown> | undefined;
+              const predictedClass =
+                typeof cls?.predicted_class === "number" ? cls.predicted_class : null;
+              const classProbabilities =
+                cls?.class_probabilities && typeof cls.class_probabilities === "object"
+                  ? (cls.class_probabilities as Record<string, number>)
+                  : undefined;
+              const confidence = toConfidencePercent({
+                predicted_class: predictedClass ?? undefined,
+                max_prob: typeof cls?.max_prob === "number" ? cls.max_prob : undefined,
+                class_probabilities: classProbabilities,
+              });
               return (
                 <div
                   key={`${fn}-${i}`}
@@ -764,18 +824,25 @@ export function HelminthPredictPanel({
                 >
                   <p className="font-medium">{shortModelName(fn)}</p>
                   <p className="text-muted-foreground">
-                    predicted_class:{" "}
-                    <span className="font-mono text-foreground">
-                      {String(cls?.predicted_class ?? "—")}
+                    Result:{" "}
+                    <span className="font-medium text-foreground">
+                      {classLabel(
+                        currentStageRef.current ?? 1,
+                        predictedClass,
+                      )}
                     </span>
                     {" · "}
-                    max_prob:{" "}
-                    <span className="font-mono text-foreground">
-                      {typeof cls?.max_prob === "number"
-                        ? cls.max_prob.toExponential(3)
-                        : "—"}
+                    Confidence:{" "}
+                    <span className="font-medium text-foreground">
+                      {confidence !== null ? `${confidence.toFixed(1)}%` : "—"}
                     </span>
                   </p>
+                  {classProbabilities ? (
+                    <p className="text-xs text-muted-foreground">
+                      Class probabilities: 0={String(classProbabilities["0"] ?? "—")}
+                      {" · "}1={String(classProbabilities["1"] ?? "—")}
+                    </p>
+                  ) : null}
                 </div>
               );
             })}
