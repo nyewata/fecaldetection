@@ -35,13 +35,15 @@ def predict_image(model, source_image: Image.Image, size: int) -> Dict[str, obje
     assert preprocessed_image.shape == (1, size, size, 3), f"Unexpected shape: {preprocessed_image.shape}"
 
     prediction = model.predict(preprocessed_image)
-    max_prob = float(np.max(prediction[0]))
-    class_probabilities = {i: float(round(prob * 100, 2)) for i, prob in enumerate(prediction[0])}
-
+    probability = float(prediction[0][0])
+    
     return {
-        "max_prob": max_prob,
-        "predicted_class": int(np.argmax(prediction[0])),
-        "class_probabilities": class_probabilities,
+        "probability": probability,
+        "predicted_class": int(round(probability)),
+        "class_probabilities": {
+            0: float(round((1 - probability) * 100, 2)),
+            1: float(round(probability * 100, 2))
+        },
     }
 
 
