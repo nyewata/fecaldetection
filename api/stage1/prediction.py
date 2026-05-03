@@ -1,4 +1,6 @@
 import logging
+import tempfile
+import zipfile
 from io import BytesIO
 from pathlib import Path
 from typing import Dict
@@ -6,6 +8,9 @@ from typing import Dict
 import numpy as np
 import requests
 from PIL import Image
+from tensorflow.keras import Input, Model
+from tensorflow.keras.applications import EfficientNetB0
+from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
 
@@ -21,12 +26,38 @@ def preprocess_image(source_image: Image.Image, size: int) -> np.ndarray:
     return np.expand_dims(img_array, axis=0)
 
 
+def build_model() -> Model:
+    inputs = Input(shape=(224, 224, 3), name="input_layer_3")
+    base = EfficientNetB0(include_top=False, weights=None, input_tensor=inputs, name="efficientnetb0")
+
+    x = base.output
+    x = GlobalAveragePooling2D(name="global_average_pooling2d")(x)
+    x = Dense(256, activation="relu", name="dense")(x)
+    x = Dropout(0.5, name="dropout")(x)
+    outputs = Dense(1, activation="sigmoid", name="dense_1")(x)
+
+    return Model(inputs, outputs, name="helminth_binary_efficientnetb0")
+
+
+def load_keras_model(model_path: Path) -> Model:
+    try:
+        return load_model(str(model_path), compile=False, safe_mode=False)
+    except Exception as exc:
+        logger.warning("load_model failed, falling back to manual model rebuild: %s", exc)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        weights_path = Path(tmpdir) / "model.weights.h5"
+        with zipfile.ZipFile(model_path, "r") as archive:
+            archive.extract("model.weights.h5", path=tmpdir)
+
+        model = build_model()
+        model.load_weights(str(weights_path))
+        return model
+
+
 def predict_with_model_file(source_image: Image.Image, model_path: Path, size: int) -> Dict[str, object]:
     """Load a model from disk and run prediction on the provided image."""
-    loaded_model = load_model(str(model_path),
-                              compile=False,
-                              safe_mode=False,
-                              )
+    loaded_model = load_keras_model(model_path)
     return predict_image(loaded_model, source_image, size)
 
 
