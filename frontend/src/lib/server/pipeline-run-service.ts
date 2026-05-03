@@ -31,9 +31,14 @@ import {
 } from "@/lib/pipeline-db";
 import {
   buildPredictionImageObjectKey,
+  buildStage3AnnotatedObjectKey,
   deletePredictionImage,
+  getPredictionImage,
+  streamWebBodyToBuffer,
   uploadPredictionImage,
+  uploadPredictionImageBuffer,
 } from "@/lib/server/prediction-image-storage";
+import { renderStage3AnnotatedPng } from "@/lib/server/render-stage3-annotated-image";
 import {
   fetchRemoteJobStatus,
   type HelminthStatusPayload,
@@ -428,10 +433,39 @@ async function saveFinishedStage3(params: {
 }): Promise<{
   runStatus: PipelineRunStatus;
 }> {
+  let annotatedImageObjectKey: string | null = null;
+  const imageKey = params.run.image_object_key;
+  if (imageKey) {
+    try {
+      const stored = await getPredictionImage(imageKey);
+      if (stored?.body) {
+        const imageBuf = await streamWebBodyToBuffer(stored.body);
+        const png = await renderStage3AnnotatedPng({
+          imageBuf,
+          remote: params.remote,
+        });
+        if (png) {
+          const key = buildStage3AnnotatedObjectKey({
+            userId: params.userId,
+            runId: params.run.id,
+          });
+          await uploadPredictionImageBuffer({
+            objectKey: key,
+            body: png,
+            contentType: "image/png",
+          });
+          annotatedImageObjectKey = key;
+        }
+      }
+    } catch {
+      /* Optional asset: R2/Sharp failures should not block persisting JSON results. */
+    }
+  }
   await saveStage3Result({
     runId: params.run.id,
     userId: params.userId,
     payload: params.remote,
+    annotatedImageObjectKey,
   });
   return { runStatus: "finished" };
 }
@@ -1059,6 +1093,7 @@ export async function serviceGetPipelineStats(
         totalPredictions: number;
         fecalDetectedStage1: number;
         helminthPositivePhase2: number;
+        speciesDetectionsCount: number;
       };
     }
   | PipelineErr

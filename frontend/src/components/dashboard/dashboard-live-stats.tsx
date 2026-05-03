@@ -10,6 +10,7 @@ type DashboardStats = {
   totalPredictions: number;
   fecalDetectedStage1: number;
   helminthPositivePhase2: number;
+  speciesDetectionsCount: number;
 };
 
 type DashboardLiveStatsProps = {
@@ -89,8 +90,8 @@ export function DashboardLiveStats({
       <StatCard
         icon={Bug}
         label="Species identified"
-        value="—"
-        hint="Phase 3 not connected yet"
+        value={String(stats.speciesDetectionsCount)}
+        hint="All-time Stage 3 bounding-box instances (finished runs)"
         accent="text-chart-3 dark:text-chart-1"
         accentBg="bg-chart-2/25 dark:bg-chart-3/30"
       />

@@ -16,10 +16,10 @@ import {
   getStage2WsOriginForClient,
   getStage3WsOriginForClient,
 } from "@/lib/helminth-config";
-import {
-  DetectionImagePreview,
-  type DetectionBoxItem,
-} from "@/components/dashboard/detection-image-preview";
+import { DetectionImagePreview } from "@/components/dashboard/detection-image-preview";
+import { getDetectionPaletteEntryForClass } from "@/lib/detection-palette";
+import { buildDetectionOverlayItemsFromResults } from "@/lib/stage3-detection-overlay";
+import type { DetectionBoxItem } from "@/components/dashboard/detection-image-preview";
 import {
   AlertCircle,
   CheckCircle2,
@@ -158,6 +158,16 @@ function toConfidencePercent(
       : classification.max_prob;
   }
   return null;
+}
+
+function countPredictionsBeforeRow(results: unknown[], rowIndex: number): number {
+  let n = 0;
+  const arr = results as Array<Record<string, unknown>>;
+  for (let k = 0; k < rowIndex && k < arr.length; k++) {
+    const pred = arr[k]?.prediction as { predictions?: unknown[] } | undefined;
+    n += Array.isArray(pred?.predictions) ? pred.predictions.length : 0;
+  }
+  return n;
 }
 
 function buildVoteSummaryFromResults(results: unknown[]): StageVoteSummary {
@@ -703,38 +713,10 @@ export function HelminthPredictPanel({
             : "Not run (no helminths)"
           : "Waiting";
 
-  const detectionOverlayItems: DetectionBoxItem[] = useMemo(() => {
-    if (!preview?.results?.length) return [];
-    const items: DetectionBoxItem[] = [];
-    for (const raw of preview.results as Array<Record<string, unknown>>) {
-      const pred = raw.prediction as
-        | {
-            predictions?: Array<{
-              class_name?: string;
-              confidence?: number;
-              box?: number[];
-            }>;
-          }
-        | undefined;
-      const preds = pred?.predictions;
-      if (!Array.isArray(preds)) continue;
-      const mf = String(raw.modelFilename ?? "model");
-      preds.forEach((p, j) => {
-        const box = p.box;
-        if (!Array.isArray(box) || box.length < 4) return;
-        const [x1, y1, x2, y2] = box.map(Number) as [number, number, number, number];
-        if (![x1, y1, x2, y2].every((n) => Number.isFinite(n))) return;
-        items.push({
-          id: `${mf}-${j}-${p.class_name ?? ""}`,
-          modelFilename: mf,
-          className: String(p.class_name ?? "Unknown"),
-          confidence: typeof p.confidence === "number" ? p.confidence : 0,
-          box: [x1, y1, x2, y2],
-        });
-      });
-    }
-    return items;
-  }, [preview]);
+  const detectionOverlayItems: DetectionBoxItem[] = useMemo(
+    () => buildDetectionOverlayItemsFromResults(preview?.results),
+    [preview?.results],
+  );
 
   const runningStageLabel =
     stage3Status === "active"
@@ -939,8 +921,8 @@ export function HelminthPredictPanel({
                 <CardHeader>
                   <CardTitle className="text-base">Stage 3 · species on slide</CardTitle>
                   <CardDescription>
-                    Your upload with model-localized boxes (coordinates match the
-                    image pixels sent to the API).
+                    Each box is numbered; colors follow species class (same class =
+                    same color). The key matches the number on the image.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -954,22 +936,45 @@ export function HelminthPredictPanel({
                     </p>
                   ) : null}
                   {detectionOverlayItems.length > 0 ? (
-                    <ul className="space-y-1.5 text-sm">
-                      {detectionOverlayItems.map((d) => (
-                        <li
-                          key={d.id}
-                          className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-border/50 bg-muted/15 px-2 py-1.5"
-                        >
-                          <span className="font-medium text-foreground">{d.className}</span>
-                          <span className="text-muted-foreground">
-                            {(d.confidence <= 1
-                              ? (d.confidence * 100).toFixed(1)
-                              : d.confidence.toFixed(1))}
-                            % · {shortModelName(d.modelFilename)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Legend (matches numbers on boxes)
+                      </p>
+                      <ul className="space-y-1.5 text-sm">
+                        {detectionOverlayItems.map((d) => {
+                          const col = getDetectionPaletteEntryForClass(
+                            d.classId,
+                            d.className,
+                          );
+                          return (
+                            <li
+                              key={d.id}
+                              className="flex flex-wrap items-center gap-2 rounded-md border border-border/50 bg-muted/15 px-2 py-1.5"
+                            >
+                              <span
+                                className="flex size-7 shrink-0 items-center justify-center rounded border-2 font-mono text-xs font-bold text-white"
+                                style={{
+                                  borderColor: col.border,
+                                  backgroundColor: col.badge,
+                                }}
+                                title={`Box ${d.legendKey}`}
+                              >
+                                {d.legendKey}
+                              </span>
+                              <span className="min-w-0 flex-1 font-medium text-foreground">
+                                {d.className}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {(d.confidence <= 1
+                                  ? (d.confidence * 100).toFixed(1)
+                                  : d.confidence.toFixed(1))}
+                                % · {shortModelName(d.modelFilename)}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
                   ) : null}
                 </CardContent>
               </Card>
@@ -992,6 +997,7 @@ export function HelminthPredictPanel({
                   const pred = row.prediction as
                     | {
                         predictions?: Array<{
+                          class_id?: unknown;
                           class_name?: string;
                           confidence?: number;
                           box?: number[];
@@ -1001,23 +1007,50 @@ export function HelminthPredictPanel({
                   if (pred && typeof pred === "object" && "predictions" in pred) {
                     const list = pred.predictions;
                     if (Array.isArray(list) && list.length > 0) {
+                      const legendBase = countPredictionsBeforeRow(preview.results, i);
                       return (
                         <div
                           key={`${fn}-det-${i}`}
                           className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm"
                         >
                           <p className="font-medium">{shortModelName(fn)}</p>
-                          <ul className="mt-1 space-y-1 text-muted-foreground">
-                            {list.map((p, j) => (
-                              <li key={j}>
-                                <span className="font-medium text-foreground">
-                                  {String(p.class_name ?? "—")}
-                                </span>
-                                {typeof p.confidence === "number"
-                                  ? ` · ${(p.confidence <= 1 ? p.confidence * 100 : p.confidence).toFixed(1)}%`
-                                  : ""}
-                              </li>
-                            ))}
+                          <ul className="mt-1 space-y-1.5 text-muted-foreground">
+                            {list.map((p, j) => {
+                              const item = detectionOverlayItems[legendBase + j];
+                              const col = item
+                                ? getDetectionPaletteEntryForClass(
+                                    item.classId,
+                                    item.className,
+                                  )
+                                : getDetectionPaletteEntryForClass(
+                                    typeof p.class_id === "number"
+                                      ? p.class_id
+                                      : undefined,
+                                    String(p.class_name ?? ""),
+                                  );
+                              const boxKey = item?.legendKey ?? String(legendBase + j + 1);
+                              return (
+                                <li key={j} className="flex items-center gap-2">
+                                  <span
+                                    className="flex size-6 shrink-0 items-center justify-center rounded border-2 font-mono text-[10px] font-bold text-white"
+                                    style={{
+                                      borderColor: col.border,
+                                      backgroundColor: col.badge,
+                                    }}
+                                  >
+                                    {boxKey}
+                                  </span>
+                                  <span>
+                                    <span className="font-medium text-foreground">
+                                      {String(p.class_name ?? "—")}
+                                    </span>
+                                    {typeof p.confidence === "number"
+                                      ? ` · ${(p.confidence <= 1 ? p.confidence * 100 : p.confidence).toFixed(1)}%`
+                                      : ""}
+                                  </span>
+                                </li>
+                              );
+                            })}
                           </ul>
                         </div>
                       );

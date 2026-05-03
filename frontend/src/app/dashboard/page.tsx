@@ -43,6 +43,7 @@ export default async function DashboardPage() {
     totalPredictions: 0,
     fecalDetectedStage1: 0,
     helminthPositivePhase2: 0,
+    speciesDetectionsCount: 0,
   };
   let predictionApiDelegateToken: string | null = null;
   if (userId) {

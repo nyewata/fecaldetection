@@ -37,6 +37,7 @@ export type PredictionPipelineRunRow = {
   stage1_result_payload: unknown | null;
   stage2_result_payload: unknown | null;
   stage3_result_payload: unknown | null;
+  stage3_annotated_image_object_key: string | null;
   stage1_vote_summary: VoteSummary | null;
   stage2_vote_summary: VoteSummary | null;
   final_outcome: string | null;
@@ -235,14 +236,17 @@ export async function saveStage3Result(params: {
   runId: string;
   userId: string;
   payload: unknown;
+  annotatedImageObjectKey?: string | null;
 }): Promise<void> {
   const sql = getSql();
   const payloadJson = JSON.stringify(params.payload);
+  const annotatedKey = params.annotatedImageObjectKey ?? null;
   await sql`
     UPDATE prediction_pipeline_runs
     SET status = 'finished',
         stage3_status = 'finished',
         stage3_result_payload = ${payloadJson}::jsonb,
+        stage3_annotated_image_object_key = ${annotatedKey},
         error_message = NULL,
         updated_at = now()
     WHERE id = ${params.runId}::uuid AND user_id = ${params.userId}
@@ -285,6 +289,7 @@ export async function getPipelineRunForUser(
            stage1_status, stage2_status, stage3_status,
            stage1_external_job_id, stage2_external_job_id, stage3_external_job_id,
            stage1_result_payload, stage2_result_payload, stage3_result_payload,
+           stage3_annotated_image_object_key,
            stage1_vote_summary, stage2_vote_summary,
            final_outcome, error_message
     FROM prediction_pipeline_runs
@@ -306,6 +311,7 @@ export async function listPipelineHistory(
            stage1_status, stage2_status, stage3_status,
            stage1_external_job_id, stage2_external_job_id, stage3_external_job_id,
            stage1_result_payload, stage2_result_payload, stage3_result_payload,
+           stage3_annotated_image_object_key,
            stage1_vote_summary, stage2_vote_summary,
            final_outcome, error_message
     FROM prediction_pipeline_runs
@@ -321,6 +327,7 @@ export async function getPipelineDashboardStats(userId: string): Promise<{
   totalPredictions: number;
   fecalDetectedStage1: number;
   helminthPositivePhase2: number;
+  speciesDetectionsCount: number;
 }> {
   const sql = getSql();
   const totalRows = await sql`
@@ -351,5 +358,34 @@ export async function getPipelineDashboardStats(userId: string): Promise<{
   const helminthPositivePhase2 =
     (posRows[0] as { c: number } | undefined)?.c ?? 0;
 
-  return { totalPredictions, fecalDetectedStage1, helminthPositivePhase2 };
+  const speciesRows = await sql`
+    SELECT COALESCE(SUM(run_detections), 0)::int AS c
+    FROM (
+      SELECT (
+        SELECT COALESCE(SUM(
+          CASE
+            WHEN jsonb_typeof(e->'prediction'->'predictions') = 'array'
+            THEN jsonb_array_length(e->'prediction'->'predictions')
+            ELSE 0
+          END
+        ), 0)
+        FROM jsonb_array_elements(
+          COALESCE(p.stage3_result_payload->'results', '[]'::jsonb)
+        ) AS e
+      ) AS run_detections
+      FROM prediction_pipeline_runs p
+      WHERE p.user_id = ${userId}
+        AND p.status = 'finished'
+        AND p.stage3_status = 'finished'
+    ) t
+  `;
+  const speciesDetectionsCount =
+    (speciesRows[0] as { c: number } | undefined)?.c ?? 0;
+
+  return {
+    totalPredictions,
+    fecalDetectedStage1,
+    helminthPositivePhase2,
+    speciesDetectionsCount,
+  };
 }

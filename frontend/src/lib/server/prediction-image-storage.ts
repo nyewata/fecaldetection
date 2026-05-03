@@ -81,6 +81,28 @@ export function buildPredictionImageObjectKey(params: {
   return `users/${userSegment}/runs/${runSegment}/original.${ext}`;
 }
 
+export function buildStage3AnnotatedObjectKey(params: {
+  userId: string;
+  runId: string;
+}): string {
+  const userSegment = sanitizePathSegment(params.userId);
+  const runSegment = sanitizePathSegment(params.runId);
+  return `users/${userSegment}/runs/${runSegment}/stage3-annotated.png`;
+}
+
+export async function streamWebBodyToBuffer(
+  stream: ReadableStream<Uint8Array>,
+): Promise<Buffer> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+}
+
 export async function uploadPredictionImage(params: {
   objectKey: string;
   file: File;
@@ -95,6 +117,23 @@ export async function uploadPredictionImage(params: {
       Body: body,
       ContentType: contentType,
       ContentLength: body.byteLength,
+    }),
+  );
+}
+
+export async function uploadPredictionImageBuffer(params: {
+  objectKey: string;
+  body: Buffer;
+  contentType: string;
+}): Promise<void> {
+  const client = getR2Client();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: params.objectKey,
+      Body: params.body,
+      ContentType: params.contentType,
+      ContentLength: params.body.byteLength,
     }),
   );
 }

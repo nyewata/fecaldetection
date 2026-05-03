@@ -1,10 +1,15 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { getDetectionPaletteEntryForClass } from "@/lib/detection-palette";
 import { cn } from "@/lib/utils";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 export type DetectionBoxItem = {
   id: string;
+  /** 1-based key shown on the image and in the legend (Box 1, Box 2, …). */
+  legendKey: string;
+  /** When set, box color is stable for this species/class. */
+  classId?: number;
   modelFilename: string;
   className: string;
   confidence: number;
@@ -74,12 +79,29 @@ export function DetectionImagePreview({
           const top = y1 * sy;
           const width = Math.max(0, (x2 - x1) * sx);
           const height = Math.max(0, (y2 - y1) * sy);
+          const colors = getDetectionPaletteEntryForClass(d.classId, d.className);
           return (
             <div
               key={d.id}
-              className="absolute box-border border-2 border-amber-500/95 shadow-sm dark:border-amber-400/90"
-              style={{ left, top, width, height }}
-            />
+              className="absolute box-border shadow-sm"
+              style={{
+                left,
+                top,
+                width,
+                height,
+                borderWidth: 2,
+                borderStyle: "solid",
+                borderColor: colors.border,
+                backgroundColor: `${colors.border}14`,
+              }}
+            >
+              <span
+                className="absolute left-0 top-0 z-10 min-h-[1.125rem] min-w-[1.125rem] rounded-br px-1 font-mono text-[10px] font-bold leading-none text-white"
+                style={{ backgroundColor: colors.badge }}
+              >
+                {d.legendKey}
+              </span>
+            </div>
           );
         })}
       </div>
