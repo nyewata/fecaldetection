@@ -26,11 +26,9 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://helminthdetect.app/",
-        "https://www.helminthdetect.app/",
-        "http://localhost:7137",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
+        "https://uticlassification.app",
+        "https://www.uticlassification.app",
+        "http://localhost:7138",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -301,4 +299,4 @@ async def process_models(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7137)
+    uvicorn.run(app, host="0.0.0.0", port=7138)
