@@ -21,7 +21,7 @@ import { signInWithEmail, type AuthFormState } from "./actions";
 
 const spring = { type: "spring" as const, stiffness: 80, damping: 18 };
 
-export function LoginForm() {
+export function LoginForm({ resetSuccess = false }: { resetSuccess?: boolean }) {
   const reduceMotion = useReducedMotion();
   const [state, formAction, pending] = useActionState<
     AuthFormState,
@@ -62,6 +62,17 @@ export function LoginForm() {
           </motion.div>
         </CardHeader>
         <CardContent className="space-y-5">
+          {resetSuccess ? (
+            <motion.p
+              className="rounded-md bg-primary/10 px-3 py-2 text-sm text-foreground"
+              role="status"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              Your password was updated. Sign in with your new password.
+            </motion.p>
+          ) : null}
           <form className="space-y-4" action={formAction}>
             <motion.div
               className="space-y-2"
@@ -86,7 +97,16 @@ export function LoginForm() {
               animate={reduceMotion ? undefined : { opacity: 1, x: 0 }}
               transition={{ ...spring, delay: 0.32 }}
             >
-              <Label htmlFor="password">Password</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="password">Password</Label>
+                <Link
+                  href="/forgot-password"
+                  data-cursor-hover
+                  className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <Input
                 id="password"
                 name="password"

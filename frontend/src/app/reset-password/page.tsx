@@ -4,24 +4,25 @@ import { SiteFooter } from "@/components/site-footer";
 import { auth } from "@/lib/auth/server";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { LoginForm } from "./login-form";
+import { Suspense } from "react";
+import { ResetPasswordForm } from "./reset-password-form";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Sign in",
-  description:
-    "Sign in to Fecal Classification to access your clinician dashboard.",
+  title: "Reset password",
+  description: "Choose a new password for your Fecal Classification account.",
 };
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ reset?: string }>;
-}) {
-  const q = await searchParams;
-  const resetSuccess = q.reset === "success";
+function ResetPasswordFallback() {
+  return (
+    <div className="relative z-10 w-full max-w-md rounded-xl border border-border/80 bg-card p-8 shadow-lg shadow-primary/5">
+      <p className="text-center text-sm text-muted-foreground">Loading…</p>
+    </div>
+  );
+}
 
+export default async function ResetPasswordPage() {
   try {
     const { data: session } = await auth.getSession();
     if (session?.user) {
@@ -39,7 +40,9 @@ export default async function LoginPage({
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -top-1/4 left-1/2 size-[600px] -translate-x-1/2 rounded-full bg-primary/[0.03] blur-3xl" />
         </div>
-        <LoginForm resetSuccess={resetSuccess} />
+        <Suspense fallback={<ResetPasswordFallback />}>
+          <ResetPasswordForm />
+        </Suspense>
       </main>
       <SiteFooter />
     </div>

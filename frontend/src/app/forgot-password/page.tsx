@@ -4,24 +4,17 @@ import { SiteFooter } from "@/components/site-footer";
 import { auth } from "@/lib/auth/server";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { LoginForm } from "./login-form";
+import { ForgotPasswordForm } from "./forgot-password-form";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Sign in",
+  title: "Forgot password",
   description:
-    "Sign in to Fecal Classification to access your clinician dashboard.",
+    "Request a link to reset your Fecal Classification account password.",
 };
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ reset?: string }>;
-}) {
-  const q = await searchParams;
-  const resetSuccess = q.reset === "success";
-
+export default async function ForgotPasswordPage() {
   try {
     const { data: session } = await auth.getSession();
     if (session?.user) {
@@ -39,7 +32,7 @@ export default async function LoginPage({
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -top-1/4 left-1/2 size-[600px] -translate-x-1/2 rounded-full bg-primary/[0.03] blur-3xl" />
         </div>
-        <LoginForm resetSuccess={resetSuccess} />
+        <ForgotPasswordForm />
       </main>
       <SiteFooter />
     </div>
