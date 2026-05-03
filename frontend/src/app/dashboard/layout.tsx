@@ -1,5 +1,5 @@
 import { DashboardHeader } from "@/components/dashboard-header";
-import { auth } from "@/lib/auth/server";
+import { getSessionInServerAction } from "@/lib/auth/route-session";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -9,9 +9,9 @@ export default async function DashboardLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  let user: { name: string; email: string } | null = null;
+  let user: { name: string; email: string };
   try {
-    const { data: session } = await auth.getSession();
+    const { data: session } = await getSessionInServerAction();
     if (!session?.user) {
       redirect("/login");
     }

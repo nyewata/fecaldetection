@@ -94,7 +94,7 @@ export function RegisterForm() {
         <CardContent className="space-y-5">
           {success ? (
             <motion.div
-              className="flex flex-col items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/50 px-6 py-10 text-center dark:border-emerald-900/40 dark:bg-emerald-950/20"
+              className="flex flex-col items-center gap-3 rounded-xl border border-primary/25 bg-primary/6 px-6 py-10 text-center dark:border-primary/35 dark:bg-primary/15"
               role="status"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -111,7 +111,7 @@ export function RegisterForm() {
                 }}
               >
                 <CheckCircle2
-                  className="size-12 text-emerald-600 dark:text-emerald-400"
+                  className="size-12 text-primary"
                   aria-hidden
                 />
               </motion.div>

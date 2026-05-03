@@ -52,8 +52,7 @@ export function SiteFooter() {
             reserved.
           </p>
           <p className="max-w-lg sm:text-right">
-            This demo does not process real patient data. Contact your
-            institution&apos;s IT or privacy office for production guidance.
+            This demo does not process real patient data.
           </p>
         </div>
       </div>

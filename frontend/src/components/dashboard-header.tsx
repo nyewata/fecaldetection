@@ -41,7 +41,7 @@ export function DashboardHeader({ user }: DashboardHeaderProps) {
         >
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            className="inline-flex items-center gap-1.5 text-sm text-foreground transition-opacity hover:opacity-80 [&_svg]:text-primary"
           >
             <Home className="size-3.5" aria-hidden />
             <span className="hidden sm:inline">Home</span>

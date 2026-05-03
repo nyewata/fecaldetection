@@ -1,5 +1,6 @@
 "use client";
 
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Sheet,
@@ -55,7 +56,7 @@ export function SiteHeader() {
         </Link>
 
         <nav
-          className="hidden items-center gap-8 text-sm text-muted-foreground md:flex"
+          className="hidden items-center gap-8 text-sm md:flex"
           aria-label="Primary"
         >
           {nav.map((item) => (
@@ -63,7 +64,7 @@ export function SiteHeader() {
               key={item.href}
               href={item.href}
               data-cursor-hover
-              className="link-animated transition-colors hover:text-foreground"
+              className="link-animated text-foreground transition-opacity hover:opacity-85"
             >
               {item.label}
             </Link>
@@ -72,7 +73,7 @@ export function SiteHeader() {
 
         <div className="flex items-center gap-2 sm:gap-3">
           {sessionPending ? (
-            <span className="hidden h-8 w-20 animate-pulse rounded-md bg-muted sm:inline-block" />
+            <Skeleton className="hidden h-8 w-24 rounded-md sm:inline-block" />
           ) : signedIn ? (
             <Link
               href="/dashboard"
@@ -115,7 +116,7 @@ export function SiteHeader() {
               type="button"
               variant="outline"
               size="icon-sm"
-              className="md:hidden"
+              className="text-foreground md:hidden [&_svg]:text-primary"
               data-cursor-hover
               onClick={() => setMenuOpen(true)}
               aria-expanded={menuOpen}
@@ -138,7 +139,7 @@ export function SiteHeader() {
                     key={item.href}
                     href={item.href}
                     data-cursor-hover
-                    className="rounded-lg px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted"
+                    className="rounded-lg px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                     onClick={() => setMenuOpen(false)}
                   >
                     {item.label}

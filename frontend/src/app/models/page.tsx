@@ -129,7 +129,7 @@ export default function ModelsPage() {
           <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
             <ScrollFadeIn>
               <div className="flex items-center gap-3">
-                <span className="flex size-9 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white dark:bg-blue-500">
+                <span className="flex size-9 items-center justify-center rounded-full bg-chart-5 text-xs font-bold text-primary-foreground">
                   1
                 </span>
                 <h2
@@ -193,7 +193,7 @@ export default function ModelsPage() {
           <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
             <ScrollFadeIn>
               <div className="flex items-center gap-3">
-                <span className="flex size-9 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white dark:bg-violet-500">
+                <span className="flex size-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                   2
                 </span>
                 <h2
@@ -206,7 +206,7 @@ export default function ModelsPage() {
             </ScrollFadeIn>
             <AnimatedCard index={0} direction="left" className="mt-6">
               <Card
-                className="border-border/80 shadow-sm transition-shadow duration-300 hover:shadow-xl hover:shadow-violet-500/5"
+                className="border-border/80 shadow-sm transition-shadow duration-300 hover:shadow-xl hover:shadow-primary/8"
                 data-cursor-hover
               >
                 <CardHeader className="gap-3">
@@ -241,7 +241,7 @@ export default function ModelsPage() {
           <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
             <ScrollFadeIn>
               <div className="flex items-center gap-3">
-                <span className="flex size-9 items-center justify-center rounded-full bg-amber-600 text-xs font-bold text-white dark:bg-amber-500">
+                <span className="flex size-9 items-center justify-center rounded-full bg-chart-3 text-xs font-bold text-primary-foreground">
                   3
                 </span>
                 <h2
@@ -254,7 +254,7 @@ export default function ModelsPage() {
             </ScrollFadeIn>
             <AnimatedCard index={0} direction="right" className="mt-6">
               <Card
-                className="border-border/80 shadow-sm transition-shadow duration-300 hover:shadow-xl hover:shadow-amber-500/5"
+                className="border-border/80 shadow-sm transition-shadow duration-300 hover:shadow-xl hover:shadow-chart-3/15"
                 data-cursor-hover
               >
                 <CardHeader className="gap-3">
@@ -288,7 +288,7 @@ export default function ModelsPage() {
                     {HELMINTH_SPECIES.map((sp) => (
                       <span
                         key={sp.id}
-                        className="rounded-full border border-border bg-background px-3 py-1 text-xs italic text-foreground/80 transition-colors hover:border-amber-400/60 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                        className="rounded-full border border-border bg-background px-3 py-1 text-xs italic text-foreground/80 transition-colors hover:border-primary/45 hover:bg-primary/8"
                         data-cursor-hover
                       >
                         {sp.name}

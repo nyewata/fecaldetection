@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 
@@ -12,6 +12,13 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
 });
+
+/** Matches `globals.css` root canvas — avoids white flash before CSS vars resolve (Safari). */
+const CANVAS_CREAM = "#faf5eb";
+
+export const viewport: Viewport = {
+  themeColor: CANVAS_CREAM,
+};
 
 export const metadata: Metadata = {
   title: {
@@ -37,8 +44,14 @@ export default function RootLayout({
       lang="en"
       data-scroll-behavior="smooth"
       className={`${inter.variable} ${geistMono.variable} h-full antialiased`}
+      style={{ backgroundColor: CANVAS_CREAM }}
     >
-      <body className="min-h-full flex flex-col font-sans">{children}</body>
+      <body
+        className="min-h-full flex flex-col font-sans"
+        style={{ backgroundColor: CANVAS_CREAM }}
+      >
+        {children}
+      </body>
     </html>
   );
 }

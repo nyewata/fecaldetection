@@ -3,7 +3,9 @@
 *.keras
 *.pt
 
-*.keras# Local secrets — never commit (Neon URLs, cookies, etc.)
+*.keras
+
+# Local secrets — never commit (Neon URLs, cookies, etc.)
 .env
 .env*.local
 
@@ -19,8 +21,18 @@ frontend/out/
 # Frontend: do not commit markdown under frontend/
 frontend/**/*.md
 
+# Requested local docs/config exclusions
+frontend/AGENTS.md
+Implement stages.md
+AGENTS.md
+
+# SQL files (migrations/scripts)
+*.sql
+**/*.sql
+
 # Cursor IDE
 .cursor/
 **/.cursor/
 .cursorrules
 .cursorignore
+*.cursor*

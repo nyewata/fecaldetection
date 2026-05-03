@@ -16,15 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import {
-  ArrowDown,
-  Box,
-  Clock,
-  ImageUp,
-  Layers,
-  Lock,
-  Vote,
-} from "lucide-react";
+import { ArrowDown, Box, Clock, Layers, Vote } from "lucide-react";
 import Link from "next/link";
 
 const ENSEMBLE_MODELS = [
@@ -236,12 +228,12 @@ export default function Home() {
                 </Card>
               ))}
               <Card className="flex items-center justify-center border-dashed border-border/80 shadow-none">
-                <CardHeader className="items-center gap-1 text-center">
+                <div className="flex flex-col items-center gap-1.5 py-6 text-center">
                   <Vote className="size-5 text-muted-foreground" aria-hidden />
-                  <CardDescription className="text-xs font-medium">
+                  <p className="text-xs font-medium text-muted-foreground">
                     Majority vote
-                  </CardDescription>
-                </CardHeader>
+                  </p>
+                </div>
               </Card>
             </ScrollFadeIn>
             <ScrollFadeIn className="mt-8" delay={0.1}>
