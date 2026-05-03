@@ -1,7 +1,7 @@
 services:
     stage-3-api:
         build:
-            context: stage3/
+            context: api/stage3/
             dockerfile: Dockerfile
         container_name: fecal-detection-stage3-api
         command: uvicorn app:app --host 0.0.0.0 --port 7139 --reload

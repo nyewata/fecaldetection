@@ -10,8 +10,6 @@ import logging
 import asyncio
 import os
 
-prediction_lock = asyncio.Lock()
-
 from prediction import (
     load_image_from_url,
     predict_with_model_file,
@@ -28,11 +26,9 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://helminthdetect.app/",
-        "https://www.helminthdetect.app/",
-        "http://localhost:7137",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
+        "https://uticlassification.app",
+        "https://www.uticlassification.app",
+        "http://localhost:7138",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -224,13 +220,12 @@ async def process_models(
 
             model_path = ensure_model_available(model_filename, MODELS_DIR)
 
-            async with prediction_lock:
-                result = await asyncio.to_thread(
-                    predict_with_model_file,
-                    image.copy(),
-                    model_path,
-                    model_input_feature_size
-                )
+            result = await asyncio.to_thread(
+                predict_with_model_file,
+                image,
+                model_path,
+                model_input_feature_size
+            )
 
             item = {
                 "modelFilename": model_filename,
@@ -304,4 +299,4 @@ async def process_models(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7137)
+    uvicorn.run(app, host="0.0.0.0", port=7138)
