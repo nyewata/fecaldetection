@@ -26,8 +26,8 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://uticlassification.app",
-        "https://www.uticlassification.app",
+        "https://helminthdetect.app/",
+        "https://www.helminthdetect.app/",
         "http://localhost:7137",
     ],
     allow_credentials=True,
