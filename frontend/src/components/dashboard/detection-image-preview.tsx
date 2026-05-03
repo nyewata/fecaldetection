@@ -20,12 +20,15 @@ type DetectionImagePreviewProps = {
   objectUrl: string | null;
   items: DetectionBoxItem[];
   className?: string;
+  /** Fires after the backing image has loaded and layout is measured. */
+  onImageLoad?: () => void;
 };
 
 export function DetectionImagePreview({
   objectUrl,
   items,
   className,
+  onImageLoad,
 }: DetectionImagePreviewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -70,7 +73,10 @@ export function DetectionImagePreview({
         src={objectUrl}
         alt="Uploaded microscopy slide"
         className="block h-auto max-h-[min(70vh,560px)] w-full object-contain"
-        onLoad={measure}
+        onLoad={() => {
+          measure();
+          onImageLoad?.();
+        }}
       />
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         {items.map((d) => {

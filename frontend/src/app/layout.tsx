@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { AppToaster } from "@/components/app-toaster";
 import { Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 
@@ -51,6 +52,7 @@ export default function RootLayout({
         style={{ backgroundColor: CANVAS_CREAM }}
       >
         {children}
+        <AppToaster />
       </body>
     </html>
   );

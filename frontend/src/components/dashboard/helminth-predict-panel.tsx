@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { PipelineStepper } from "@/components/pipeline-stepper";
 import { Button } from "@/components/ui/button";
 import {
@@ -310,6 +311,9 @@ export function HelminthPredictPanel({
       }
       setProgress((prev) => ({ ...prev, done: prev.total }));
       window.dispatchEvent(new Event("pipeline-run-saved"));
+      toast.success("Run saved", {
+        description: "Prediction history and stats were updated.",
+      });
     },
     [stage2Status, stage3Status],
   );

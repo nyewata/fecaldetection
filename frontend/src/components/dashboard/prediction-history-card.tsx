@@ -14,17 +14,32 @@ import { getDetectionPaletteEntryForClass } from "@/lib/detection-palette";
 import type { PredictionPipelineRunRow } from "@/lib/pipeline-db";
 import { buildDetectionOverlayItemsFromResults } from "@/lib/stage3-detection-overlay";
 import { cn } from "@/lib/utils";
-import { ImagePlus, X } from "lucide-react";
+import { Copy, Download, ImagePlus, Loader2, X } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 const HISTORY_PAGE_SIZE = 30;
 const HISTORY_VISIBLE_STEP = 10;
+
+const selectClass =
+  "h-8 min-w-[9.5rem] rounded-md border border-input bg-background px-2 text-xs shadow-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 sm:text-sm";
 
 type PredictionHistoryCardProps = {
   initialHistory: PredictionPipelineRunRow[];
   predictionApiDelegateToken: string | null;
 };
+
+type OutcomeFilter =
+  | "all"
+  | "finished"
+  | "failed"
+  | "non_fecal"
+  | "helminth_positive"
+  | "helminth_negative"
+  | "stage3_finished";
+
+type DateFilter = "all" | "today" | "7d" | "30d";
 
 function summarizePipelineRun(row: PredictionPipelineRunRow): string {
   if (row.status === "failed") return row.error_message || "Failed";
@@ -72,6 +87,33 @@ function shortModelName(filename: string): string {
   return base.replace(/\.(keras|h5|pb|onnx|tflite|savedmodel)$/i, "");
 }
 
+function startOfTodayMs(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function rowMatchesOutcome(row: PredictionPipelineRunRow, f: OutcomeFilter): boolean {
+  if (f === "all") return true;
+  if (f === "finished") return row.status === "finished";
+  if (f === "failed") return row.status === "failed";
+  if (f === "non_fecal") return row.final_outcome === "non_fecal";
+  if (f === "helminth_positive") return row.final_outcome === "helminth_positive";
+  if (f === "helminth_negative") return row.final_outcome === "helminth_negative";
+  if (f === "stage3_finished") return row.stage3_status === "finished";
+  return true;
+}
+
+function rowMatchesDate(row: PredictionPipelineRunRow, f: DateFilter): boolean {
+  if (f === "all") return true;
+  const created = new Date(row.created_at).getTime();
+  const now = Date.now();
+  if (f === "today") return created >= startOfTodayMs();
+  if (f === "7d") return created >= now - 7 * 86400000;
+  if (f === "30d") return created >= now - 30 * 86400000;
+  return true;
+}
+
 export function PredictionHistoryCard({
   initialHistory,
   predictionApiDelegateToken,
@@ -92,7 +134,19 @@ export function PredictionHistoryCard({
   const [historyHasMore, setHistoryHasMore] = useState(
     initialHistory.length >= HISTORY_PAGE_SIZE,
   );
+  const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>("all");
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [detailRun, setDetailRun] = useState<PredictionPipelineRunRow | null>(null);
+  const [detailModalImageLoaded, setDetailModalImageLoaded] = useState(false);
+  const [annotatedDownloadBusy, setAnnotatedDownloadBusy] = useState(false);
+
+  const filteredHistory = useMemo(
+    () =>
+      history.filter(
+        (row) => rowMatchesOutcome(row, outcomeFilter) && rowMatchesDate(row, dateFilter),
+      ),
+    [history, outcomeFilter, dateFilter],
+  );
 
   const detailOverlayItems = useMemo(() => {
     if (!detailRun?.stage3_result_payload || typeof detailRun.stage3_result_payload !== "object") {
@@ -158,6 +212,17 @@ export function PredictionHistoryCard({
   }, [loadHistory]);
 
   useEffect(() => {
+    setHistoryVisibleCount((prev) =>
+      Math.min(Math.max(HISTORY_VISIBLE_STEP, prev), Math.max(filteredHistory.length, 1)),
+    );
+  }, [outcomeFilter, dateFilter, filteredHistory.length]);
+
+  useEffect(() => {
+    if (!detailRun?.id) return;
+    setDetailModalImageLoaded(false);
+  }, [detailRun?.id]);
+
+  useEffect(() => {
     if (!detailRun) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setDetailRun(null);
@@ -171,11 +236,13 @@ export function PredictionHistoryCard({
     };
   }, [detailRun]);
 
-  const visibleHistory = history.slice(0, historyVisibleCount);
-  const canLoadMoreHistory = historyVisibleCount < history.length || historyHasMore;
+  const visibleHistory = filteredHistory.slice(0, historyVisibleCount);
+  const canLoadMoreHistory =
+    historyVisibleCount < filteredHistory.length ||
+    (historyHasMore && historyVisibleCount >= filteredHistory.length);
 
   const handleLoadMoreHistory = async () => {
-    if (historyVisibleCount < history.length) {
+    if (historyVisibleCount < filteredHistory.length) {
       setHistoryVisibleCount((prev) => prev + HISTORY_VISIBLE_STEP);
       return;
     }
@@ -183,6 +250,53 @@ export function PredictionHistoryCard({
       await loadHistory({ append: true });
     }
   };
+
+  const copyRunId = useCallback(async () => {
+    if (!detailRun) return;
+    try {
+      await navigator.clipboard.writeText(detailRun.id);
+      toast.success("Run ID copied", {
+        description: "Paste it into support or lab logs when asked for the run reference.",
+      });
+    } catch {
+      toast.error("Could not copy", {
+        description: "Your browser may block clipboard access on this page.",
+      });
+    }
+  }, [detailRun]);
+
+  const downloadAnnotatedPng = useCallback(async () => {
+    if (!detailRun?.stage3_annotated_image_object_key) return;
+    const url = `/api/predictions/pipeline-run/${detailRun.id}/image/stage3-annotated`;
+    setAnnotatedDownloadBusy(true);
+    try {
+      const res = await fetch(url, {
+        credentials: "include",
+        headers: delegateAuthHeaders,
+      });
+      if (!res.ok) {
+        toast.error("Download failed", { description: `Server returned ${res.status}.` });
+        return;
+      }
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      const base = (detailRun.original_filename ?? "prediction").replace(/\.[^/.]+$/, "");
+      const filename = `${base}-stage3-annotated.png`;
+      a.download = filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+      toast.success("Download started", { description: filename });
+    } catch {
+      toast.error("Download failed", { description: "Network error while fetching the image." });
+    } finally {
+      setAnnotatedDownloadBusy(false);
+    }
+  }, [detailRun, delegateAuthHeaders]);
 
   return (
     <Card className="border-border/80">
@@ -192,12 +306,42 @@ export function PredictionHistoryCard({
           Prediction history
         </CardTitle>
         <CardDescription>
-          Shows the latest 10 runs first. Tap a row for full pipeline details and the
-          Stage 3 image (saved overlay when available).
+          Filter by outcome or date, then tap a row for details, download, and run ID.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex justify-end">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              Outcome
+              <select
+                className={selectClass}
+                value={outcomeFilter}
+                onChange={(e) => setOutcomeFilter(e.target.value as OutcomeFilter)}
+              >
+                <option value="all">All outcomes</option>
+                <option value="finished">Finished</option>
+                <option value="failed">Failed</option>
+                <option value="non_fecal">Non-fecal (Stage 1)</option>
+                <option value="helminth_positive">Helminth-positive</option>
+                <option value="helminth_negative">Helminth-negative</option>
+                <option value="stage3_finished">Stage 3 complete</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              Date
+              <select
+                className={selectClass}
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value as DateFilter)}
+              >
+                <option value="all">Any time</option>
+                <option value="today">Today</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+              </select>
+            </label>
+          </div>
           <Button
             type="button"
             variant="outline"
@@ -216,6 +360,10 @@ export function PredictionHistoryCard({
         ) : history.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             No saved runs yet. Complete a screening to see it here.
+          </p>
+        ) : filteredHistory.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            No runs match these filters. Try &ldquo;All outcomes&rdquo; or a wider date range.
           </p>
         ) : (
           <>
@@ -305,8 +453,8 @@ export function PredictionHistoryCard({
             aria-modal="true"
             aria-labelledby="pipeline-detail-title"
           >
-            <div className="flex items-start justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
-              <div className="min-w-0">
+            <div className="flex flex-col gap-3 border-b border-border/60 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+              <div className="min-w-0 flex-1">
                 <h2
                   id="pipeline-detail-title"
                   className="truncate text-base font-semibold text-foreground"
@@ -317,12 +465,47 @@ export function PredictionHistoryCard({
                   {new Date(detailRun.created_at).toLocaleString()} · {detailRun.status}
                   {detailRun.final_outcome ? ` · ${detailRun.final_outcome}` : ""}
                 </p>
+                <p
+                  className="mt-1.5 truncate font-mono text-[11px] text-muted-foreground"
+                  title={detailRun.id}
+                >
+                  Run ID: {detailRun.id}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => void copyRunId()}
+                  >
+                    <Copy className="size-3.5" aria-hidden />
+                    Copy run ID
+                  </Button>
+                  {detailRun.stage3_annotated_image_object_key ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={annotatedDownloadBusy}
+                      onClick={() => void downloadAnnotatedPng()}
+                    >
+                      {annotatedDownloadBusy ? (
+                        <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <Download className="size-3.5" aria-hidden />
+                      )}
+                      Annotated PNG
+                    </Button>
+                  ) : null}
+                </div>
               </div>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="shrink-0"
+                className="shrink-0 self-start"
                 onClick={() => setDetailRun(null)}
                 aria-label="Close"
               >
@@ -389,34 +572,60 @@ export function PredictionHistoryCard({
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Species localization (saved image)
                   </p>
-                  {/* eslint-disable-next-line @next/next/no-img-element -- authenticated API URL */}
-                  <img
-                    src={`/api/predictions/pipeline-run/${detailRun.id}/image/stage3-annotated`}
-                    alt="Stage 3 annotated slide"
-                    className="mx-auto block h-auto max-h-[min(70vh,560px)] w-full rounded-lg border border-border/60 object-contain"
-                  />
+                  <div className="relative w-full min-h-[min(40vh,320px)]">
+                    {!detailModalImageLoaded ? (
+                      <Skeleton className="absolute inset-0 z-0 h-full min-h-[min(40vh,320px)] w-full rounded-lg" />
+                    ) : null}
+                    {/* eslint-disable-next-line @next/next/no-img-element -- authenticated API URL */}
+                    <img
+                      src={`/api/predictions/pipeline-run/${detailRun.id}/image/stage3-annotated`}
+                      alt="Stage 3 annotated slide"
+                      className={cn(
+                        "relative z-10 mx-auto block h-auto max-h-[min(70vh,560px)] w-full rounded-lg border border-border/60 object-contain",
+                        !detailModalImageLoaded && "opacity-0",
+                      )}
+                      onLoad={() => setDetailModalImageLoaded(true)}
+                    />
+                  </div>
                 </div>
               ) : detailRun.image_object_key && detailOverlayItems.length > 0 ? (
                 <div className="space-y-2">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Species localization (from stored results)
                   </p>
-                  <DetectionImagePreview
-                    objectUrl={`/api/predictions/pipeline-run/${detailRun.id}/image`}
-                    items={detailOverlayItems}
-                  />
+                  <div className="relative w-full min-h-[min(40vh,320px)]">
+                    {!detailModalImageLoaded ? (
+                      <Skeleton className="absolute inset-0 z-0 h-full min-h-[min(40vh,320px)] w-full rounded-lg" />
+                    ) : null}
+                    <div className={cn(!detailModalImageLoaded && "opacity-0")}>
+                      <DetectionImagePreview
+                        objectUrl={`/api/predictions/pipeline-run/${detailRun.id}/image`}
+                        items={detailOverlayItems}
+                        onImageLoad={() => setDetailModalImageLoaded(true)}
+                      />
+                    </div>
+                  </div>
                 </div>
               ) : detailRun.image_object_key ? (
                 <div className="space-y-2">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Original upload
                   </p>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/predictions/pipeline-run/${detailRun.id}/image`}
-                    alt="Uploaded slide"
-                    className="mx-auto block h-auto max-h-[min(70vh,560px)] w-full rounded-lg border border-border/60 object-contain"
-                  />
+                  <div className="relative w-full min-h-[min(40vh,320px)]">
+                    {!detailModalImageLoaded ? (
+                      <Skeleton className="absolute inset-0 z-0 h-full min-h-[min(40vh,320px)] w-full rounded-lg" />
+                    ) : null}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/predictions/pipeline-run/${detailRun.id}/image`}
+                      alt="Uploaded slide"
+                      className={cn(
+                        "relative z-10 mx-auto block h-auto max-h-[min(70vh,560px)] w-full rounded-lg border border-border/60 object-contain",
+                        !detailModalImageLoaded && "opacity-0",
+                      )}
+                      onLoad={() => setDetailModalImageLoaded(true)}
+                    />
+                  </div>
                 </div>
               ) : null}
 
