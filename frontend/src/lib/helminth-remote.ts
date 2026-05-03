@@ -1,4 +1,4 @@
-import { getHelminthApiBaseUrl } from "@/lib/helminth-config";
+import { getStage1ApiBaseUrl } from "@/lib/helminth-config";
 
 export type HelminthStatusPayload = {
   status: string;
@@ -8,10 +8,11 @@ export type HelminthStatusPayload = {
   errors?: unknown[];
 };
 
-export async function fetchHelminthJobStatus(
+export async function fetchRemoteJobStatus(
+  apiBaseUrl: string,
   externalJobId: string,
 ): Promise<HelminthStatusPayload> {
-  const base = getHelminthApiBaseUrl();
+  const base = apiBaseUrl.replace(/\/$/, "");
   const res = await fetch(`${base}/predict/status/${externalJobId}`, {
     method: "GET",
     headers: { Accept: "application/json" },
@@ -19,9 +20,13 @@ export async function fetchHelminthJobStatus(
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(
-      `Helminth status HTTP ${res.status}: ${text.slice(0, 200)}`,
-    );
+    throw new Error(`Remote status HTTP ${res.status}: ${text.slice(0, 200)}`);
   }
   return (await res.json()) as HelminthStatusPayload;
+}
+
+export async function fetchHelminthJobStatus(
+  externalJobId: string,
+): Promise<HelminthStatusPayload> {
+  return fetchRemoteJobStatus(getStage1ApiBaseUrl(), externalJobId);
 }

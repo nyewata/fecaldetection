@@ -12,6 +12,15 @@ import {
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
+  getStage1WsOriginForClient,
+  getStage2WsOriginForClient,
+  getStage3WsOriginForClient,
+} from "@/lib/helminth-config";
+import {
+  DetectionImagePreview,
+  type DetectionBoxItem,
+} from "@/components/dashboard/detection-image-preview";
+import {
   AlertCircle,
   CheckCircle2,
   Clock3,
@@ -21,7 +30,7 @@ import {
 } from "lucide-react";
 
 type StepStatus = "idle" | "active" | "complete" | "skipped";
-type StageNumber = 1 | 2;
+type StageNumber = 1 | 2 | 3;
 
 type PipelineStatusPayload = {
   ok: true;
@@ -31,6 +40,7 @@ type PipelineStatusPayload = {
   remote?: Record<string, unknown>;
   gateDecision?: "fecal" | "non_fecal";
   awaitingStage2Start?: boolean;
+  awaitingStage3Start?: boolean;
   idempotent?: boolean;
 };
 
@@ -41,16 +51,6 @@ type PipelineSubmitResponse = {
     externalJobId: string;
     totalModels: number;
   };
-};
-
-type Stage2StartResponse = {
-  ok: true;
-  stage: {
-    stage: 2;
-    externalJobId: string;
-    totalModels: number;
-  };
-  idempotent?: boolean;
 };
 
 type WsPayload = {
@@ -68,6 +68,14 @@ type WsPayload = {
       max_prob?: number;
       probability?: number;
       class_probabilities?: Record<string, number>;
+    };
+    prediction?: {
+      predictions?: Array<{
+        class_id?: number;
+        class_name?: string;
+        confidence?: number;
+        box?: number[];
+      }>;
     };
     index?: number;
     error?: string;
@@ -89,31 +97,33 @@ type ActivityItem = {
   predictedClass: number | null;
   confidencePct: number | null;
   error: string | null;
+  detail?: string | null;
 };
 
 export type HelminthPredictPanelProps = {
   predictionApiDelegateToken: string | null;
 };
 
-function wsOrigin(): string {
-  return (
-    process.env.NEXT_PUBLIC_HELMINTH_WS_ORIGIN?.replace(/\/$/, "") ||
-    "wss://binaryapi.helminthdetect.app"
-  );
-}
-
-function wsUrl(jobId: string): string {
-  return `${wsOrigin()}/ws/${jobId}`;
+function wsUrlForStage(stage: StageNumber, jobId: string): string {
+  const origin =
+    stage === 1
+      ? getStage1WsOriginForClient()
+      : stage === 2
+        ? getStage2WsOriginForClient()
+        : getStage3WsOriginForClient();
+  return `${origin}/ws/${jobId}`;
 }
 
 function shortModelName(filename: string): string {
   return filename
     .replace(/\.keras$/i, "")
+    .replace(/\.pt$/i, "")
     .replace(/^HELMINTHS_BINARY_/i, "")
     .replace(/^BINARY_/i, "");
 }
 
 function classLabel(stage: StageNumber, predictedClass: number | null): string {
+  if (stage === 3) return "Species localization";
   if (predictedClass === null) return "Unknown";
   if (stage === 1) {
     return predictedClass === 0 ? "Fecal" : "Non-fecal";
@@ -187,8 +197,10 @@ export function HelminthPredictPanel({
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [stage1Status, setStage1Status] = useState<StepStatus>("idle");
   const [stage2Status, setStage2Status] = useState<StepStatus>("idle");
+  const [stage3Status, setStage3Status] = useState<StepStatus>("idle");
   const [stage1Vote, setStage1Vote] = useState<StageVoteSummary | null>(null);
   const [stage2Vote, setStage2Vote] = useState<StageVoteSummary | null>(null);
+  const [localImageUrl, setLocalImageUrl] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -196,14 +208,34 @@ export function HelminthPredictPanel({
   const runIdRef = useRef<string | null>(null);
   const currentStageRef = useRef<StageNumber | null>(null);
   const stage2StartedRef = useRef(false);
+  const stage3StartedRef = useRef(false);
   const fileRef = useRef<File | null>(null);
 
+  useEffect(() => {
+    if (!file) {
+      setLocalImageUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setLocalImageUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [file]);
+
   const stepperStatuses: { status: StepStatus }[] = useMemo(
-    () => [{ status: stage1Status }, { status: stage2Status }, { status: "skipped" }],
-    [stage1Status, stage2Status],
+    () => [
+      { status: stage1Status },
+      { status: stage2Status },
+      { status: stage3Status },
+    ],
+    [stage1Status, stage2Status, stage3Status],
   );
 
-  const isRunning = stage1Status === "active" || stage2Status === "active";
+  const isRunning =
+    stage1Status === "active" ||
+    stage2Status === "active" ||
+    stage3Status === "active";
   const pct =
     progress.total > 0
       ? Math.min(100, Math.round((progress.done / progress.total) * 100))
@@ -228,6 +260,34 @@ export function HelminthPredictPanel({
     }
   }, [clearTimers]);
 
+  const handleStatusResultRef = useRef<
+    ((runId: string, result: PipelineStatusPayload) => Promise<void>) | null
+  >(null);
+
+  const startFallbackSync = useCallback(
+    (runId: string) => {
+      if (fallbackRef.current) return;
+      fallbackRef.current = setInterval(async () => {
+        try {
+          const res = await fetch(
+            `/api/predictions/pipeline-run/${encodeURIComponent(runId)}/sync`,
+            { credentials: "include", headers: delegateAuthHeaders },
+          );
+          const data = (await res.json()) as PipelineStatusPayload & { error?: string };
+          if (!res.ok || !data.ok) return;
+          await handleStatusResultRef.current?.(runId, data);
+          if (data.runStatus === "finished" || data.runStatus === "failed") {
+            clearInterval(fallbackRef.current!);
+            fallbackRef.current = null;
+          }
+        } catch {
+          /* keep polling */
+        }
+      }, 2000);
+    },
+    [delegateAuthHeaders],
+  );
+
   const finishPipeline = useCallback(
     async (message: string) => {
       setLiveMessage(message);
@@ -235,10 +295,13 @@ export function HelminthPredictPanel({
       if (stage2Status === "active") {
         setStage2Status("complete");
       }
+      if (stage3Status === "active") {
+        setStage3Status("complete");
+      }
       setProgress((prev) => ({ ...prev, done: prev.total }));
       window.dispatchEvent(new Event("pipeline-run-saved"));
     },
-    [stage2Status],
+    [stage2Status, stage3Status],
   );
 
   const applyWsPayload = useCallback((msg: WsPayload, stage: StageNumber) => {
@@ -258,20 +321,44 @@ export function HelminthPredictPanel({
         next.results = [...(next.results as object[]), row as object];
         return next;
       });
-      setActivity((prev) => [
-        {
-          id: `${Date.now()}-${Math.random()}`,
-          stage,
-          modelFilename: String(row.modelFilename ?? "model"),
-          predictedClass:
-            typeof row.classification?.predicted_class === "number"
-              ? row.classification.predicted_class
-              : null,
-          confidencePct: toConfidencePercent(row.classification),
-          error: null,
-        },
-        ...prev,
-      ]);
+      const preds = row.prediction?.predictions;
+      if (Array.isArray(preds) && preds.length > 0) {
+        preds.forEach((p, idx) => {
+          const conf =
+            typeof p.confidence === "number" && Number.isFinite(p.confidence)
+              ? p.confidence <= 1
+                ? p.confidence * 100
+                : p.confidence
+              : null;
+          setActivity((prev) => [
+            {
+              id: `${Date.now()}-${idx}-${Math.random()}`,
+              stage,
+              modelFilename: String(row.modelFilename ?? "model"),
+              predictedClass: null,
+              confidencePct: conf,
+              error: null,
+              detail: String(p.class_name ?? "Detection"),
+            },
+            ...prev,
+          ]);
+        });
+      } else {
+        setActivity((prev) => [
+          {
+            id: `${Date.now()}-${Math.random()}`,
+            stage,
+            modelFilename: String(row.modelFilename ?? "model"),
+            predictedClass:
+              typeof row.classification?.predicted_class === "number"
+                ? row.classification.predicted_class
+                : null,
+            confidencePct: toConfidencePercent(row.classification),
+            error: null,
+          },
+          ...prev,
+        ]);
+      }
       setProgress((prev) => ({
         total: msg.progress?.total ?? prev.total,
         done: msg.progress?.completed ?? prev.done,
@@ -305,11 +392,86 @@ export function HelminthPredictPanel({
       }
       if (stage === 1) {
         setStage1Vote(buildVoteSummaryFromResults(results));
-      } else {
+      } else if (stage === 2) {
         setStage2Vote(buildVoteSummaryFromResults(results));
       }
     }
   }, []);
+
+  const connectWebSocket = useCallback(
+    (externalJobId: string, runId: string, stage: StageNumber) => {
+      teardownWs();
+      currentStageRef.current = stage;
+      setLiveMessage(
+        stage === 1
+          ? "Stage 1 started. Opening live connection…"
+          : stage === 2
+            ? "Stage 2 started. Opening live connection…"
+            : "Stage 3 started. Opening live connection…",
+      );
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(wsUrlForStage(stage, externalJobId));
+      } catch {
+        setLiveMessage("WebSocket unavailable — syncing over HTTPS.");
+        startFallbackSync(runId);
+        return;
+      }
+      wsRef.current = ws;
+      ws.onopen = () => {
+        pingRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) ws.send("ping");
+        }, 15000);
+      };
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(String(evt.data)) as WsPayload;
+          applyWsPayload(msg, stage);
+          if (msg.type === "finished" || msg.status === "finished") {
+            teardownWs();
+            void (async () => {
+              const res = await fetch(
+                `/api/predictions/pipeline-run/${encodeURIComponent(runId)}/finalize`,
+                {
+                  method: "PATCH",
+                  credentials: "include",
+                  headers: delegateAuthHeaders,
+                },
+              );
+              const data = (await res.json()) as PipelineStatusPayload & { error?: string };
+              if (!res.ok || !data.ok) {
+                throw new Error(data.error || "Finalize failed.");
+              }
+              await handleStatusResultRef.current?.(runId, data);
+            })().catch((reason: unknown) => {
+              setError(reason instanceof Error ? reason.message : "Finalize failed.");
+              if (stage === 1) setStage1Status("idle");
+              if (stage === 2) setStage2Status("idle");
+              if (stage === 3) setStage3Status("idle");
+            });
+          }
+        } catch {
+          /* ignore malformed frames */
+        }
+      };
+      ws.onerror = () => {
+        setLiveMessage("WebSocket error — falling back to HTTPS sync.");
+        teardownWs();
+        startFallbackSync(runId);
+      };
+      ws.onclose = () => {
+        clearTimers();
+        wsRef.current = null;
+      };
+    },
+    [
+      applyWsPayload,
+      clearTimers,
+      delegateAuthHeaders,
+      startFallbackSync,
+      teardownWs,
+    ],
+  );
 
   const startStage2 = useCallback(
     async (runId: string) => {
@@ -351,48 +513,55 @@ export function HelminthPredictPanel({
       currentStageRef.current = 2;
       setProgress({ done: 0, total: data.stage.totalModels ?? 0 });
       setLiveMessage("Stage 2 started. Opening live connection…");
-      const ws = new WebSocket(wsUrl(data.stage.externalJobId));
-      wsRef.current = ws;
-      ws.onopen = () => {
-        pingRef.current = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) ws.send("ping");
-        }, 15000);
-      };
-      ws.onmessage = (evt) => {
-        try {
-          const msg = JSON.parse(String(evt.data)) as WsPayload;
-          applyWsPayload(msg, 2);
-          if (msg.type === "finished" || msg.status === "finished") {
-            teardownWs();
-            void (async () => {
-              const fr = await fetch(
-                `/api/predictions/pipeline-run/${encodeURIComponent(runId)}/finalize`,
-                {
-                  method: "PATCH",
-                  credentials: "include",
-                  headers: delegateAuthHeaders,
-                },
-              );
-              const fin = (await fr.json()) as PipelineStatusPayload & { error?: string };
-              if (!fr.ok || !fin.ok) {
-                throw new Error(fin.error || "Finalize failed.");
-              }
-              setStage2Status("complete");
-              await finishPipeline("Pipeline complete. Results saved.");
-            })().catch((reason: unknown) => {
-              setError(reason instanceof Error ? reason.message : "Finalize failed.");
-              setStage2Status("idle");
-            });
-          }
-        } catch {
-          /* ignore malformed frames */
-        }
-      };
-      ws.onerror = () => {
-        setLiveMessage("WebSocket unavailable — syncing over HTTPS.");
-      };
+      connectWebSocket(data.stage.externalJobId, runId, 2);
     },
-    [applyWsPayload, delegateAuthHeaders, finishPipeline, teardownWs],
+    [connectWebSocket, delegateAuthHeaders],
+  );
+
+  const startStage3 = useCallback(
+    async (runId: string) => {
+      if (stage3StartedRef.current) return;
+      stage3StartedRef.current = true;
+
+      const originalFile = fileRef.current;
+      if (!originalFile) {
+        throw new Error(
+          "Stage 3 requires the original image in this session. Re-run pipeline upload.",
+        );
+      }
+
+      setStage3Status("active");
+      setProgress({ done: 0, total: 0 });
+      setPreview(null);
+      setLiveMessage("Helminths detected. Starting Stage 3 species localization…");
+
+      const fd = new FormData();
+      fd.set("image", originalFile);
+      const res = await fetch(
+        `/api/predictions/pipeline-run/${encodeURIComponent(runId)}/stage3`,
+        {
+          method: "POST",
+          body: fd,
+          credentials: "include",
+          headers: delegateAuthHeaders,
+        },
+      );
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        stage?: { externalJobId?: string; totalModels?: number };
+      };
+      if (!res.ok || !data.ok || !data.stage?.externalJobId) {
+        stage3StartedRef.current = false;
+        throw new Error(data.error || "Could not start Stage 3.");
+      }
+
+      currentStageRef.current = 3;
+      setProgress({ done: 0, total: data.stage.totalModels ?? 0 });
+      setLiveMessage("Stage 3 started. Opening live connection…");
+      connectWebSocket(data.stage.externalJobId, runId, 3);
+    },
+    [connectWebSocket, delegateAuthHeaders],
   );
 
   const handleStatusResult = useCallback(
@@ -406,9 +575,15 @@ export function HelminthPredictPanel({
       }
       if (result.gateDecision === "non_fecal") {
         setStage2Status("skipped");
+        setStage3Status("skipped");
         await finishPipeline(
           "Stage 1 majority vote is non-fecal. Stage 2 skipped and run saved.",
         );
+        return;
+      }
+      if (result.awaitingStage3Start) {
+        setStage2Status("complete");
+        await startStage3(runId);
         return;
       }
       if (result.awaitingStage2Start) {
@@ -416,113 +591,26 @@ export function HelminthPredictPanel({
         await startStage2(runId);
         return;
       }
-      if (
-        result.runStatus === "finished" &&
-        (result.stage === 2 || result.stage === null)
-      ) {
-        setStage2Status("complete");
-        await finishPipeline("Pipeline complete. Results saved.");
+      if (result.runStatus === "finished") {
+        if (result.stage === 3) {
+          setStage3Status("complete");
+          await finishPipeline("Pipeline complete. Species detection saved.");
+          return;
+        }
+        if (result.stage === 2 || result.stage === null) {
+          setStage2Status("complete");
+          setStage3Status("skipped");
+          await finishPipeline("Pipeline complete. Results saved.");
+          return;
+        }
       }
     },
-    [applyWsPayload, finishPipeline, startStage2],
+    [applyWsPayload, finishPipeline, startStage2, startStage3],
   );
 
-  const startFallbackSync = useCallback(
-    (runId: string) => {
-      if (fallbackRef.current) return;
-      fallbackRef.current = setInterval(async () => {
-        try {
-          const res = await fetch(
-            `/api/predictions/pipeline-run/${encodeURIComponent(runId)}/sync`,
-            { credentials: "include", headers: delegateAuthHeaders },
-          );
-          const data = (await res.json()) as PipelineStatusPayload & { error?: string };
-          if (!res.ok || !data.ok) return;
-          await handleStatusResult(runId, data);
-          if (data.runStatus === "finished" || data.runStatus === "failed") {
-            clearInterval(fallbackRef.current!);
-            fallbackRef.current = null;
-          }
-        } catch {
-          /* keep polling */
-        }
-      }, 2000);
-    },
-    [delegateAuthHeaders, handleStatusResult],
-  );
-
-  const connectWebSocket = useCallback(
-    (externalJobId: string, runId: string, stage: StageNumber) => {
-      teardownWs();
-      currentStageRef.current = stage;
-      setLiveMessage(
-        stage === 1
-          ? "Stage 1 started. Opening live connection…"
-          : "Stage 2 started. Opening live connection…",
-      );
-      let ws: WebSocket;
-      try {
-        ws = new WebSocket(wsUrl(externalJobId));
-      } catch {
-        setLiveMessage("WebSocket unavailable — syncing over HTTPS.");
-        startFallbackSync(runId);
-        return;
-      }
-      wsRef.current = ws;
-      ws.onopen = () => {
-        pingRef.current = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) ws.send("ping");
-        }, 15000);
-      };
-      ws.onmessage = (evt) => {
-        try {
-          const msg = JSON.parse(String(evt.data)) as WsPayload;
-          applyWsPayload(msg, stage);
-          if (msg.type === "finished" || msg.status === "finished") {
-            teardownWs();
-            void (async () => {
-              const res = await fetch(
-                `/api/predictions/pipeline-run/${encodeURIComponent(runId)}/finalize`,
-                {
-                  method: "PATCH",
-                  credentials: "include",
-                  headers: delegateAuthHeaders,
-                },
-              );
-              const data = (await res.json()) as PipelineStatusPayload & { error?: string };
-              if (!res.ok || !data.ok) {
-                throw new Error(data.error || "Finalize failed.");
-              }
-              await handleStatusResult(runId, data);
-            })().catch((reason: unknown) => {
-              setError(reason instanceof Error ? reason.message : "Finalize failed.");
-              if (stage === 1) setStage1Status("idle");
-              if (stage === 2) setStage2Status("idle");
-            });
-          }
-        } catch {
-          /* ignore malformed frames */
-        }
-      };
-      ws.onerror = () => {
-        setLiveMessage("WebSocket error — falling back to HTTPS sync.");
-        teardownWs();
-        startFallbackSync(runId);
-      };
-      ws.onclose = () => {
-        clearTimers();
-        wsRef.current = null;
-      };
-    },
-    [
-      applyWsPayload,
-      clearTimers,
-      delegateAuthHeaders,
-      handleStatusResult,
-      startFallbackSync,
-      teardownWs,
-    ],
-  );
+  useEffect(() => {
+    handleStatusResultRef.current = handleStatusResult;
+  }, [handleStatusResult]);
 
   useEffect(() => () => teardownWs(), [teardownWs]);
 
@@ -530,6 +618,7 @@ export function HelminthPredictPanel({
     if (!file) return;
     fileRef.current = file;
     stage2StartedRef.current = false;
+    stage3StartedRef.current = false;
     setError(null);
     setPreview(null);
     setActivity([]);
@@ -537,6 +626,7 @@ export function HelminthPredictPanel({
     setStage2Vote(null);
     setStage1Status("active");
     setStage2Status("idle");
+    setStage3Status("idle");
     setProgress({ done: 0, total: 0 });
     setLiveMessage("Uploading image and starting Stage 1…");
     runIdRef.current = null;
@@ -570,6 +660,7 @@ export function HelminthPredictPanel({
     } catch (reason) {
       setStage1Status("idle");
       setStage2Status("idle");
+      setStage3Status("idle");
       setError(reason instanceof Error ? reason.message : "Upload failed.");
       setLiveMessage("");
     }
@@ -601,6 +692,57 @@ export function HelminthPredictPanel({
             ? "Running"
             : "Waiting";
 
+  const stage3ResultLabel =
+    stage3Status === "complete"
+      ? "Complete"
+      : stage3Status === "active"
+        ? "Running"
+        : stage3Status === "skipped"
+          ? stage2Status === "skipped"
+            ? "Not run (Stage 1 non-fecal)"
+            : "Not run (no helminths)"
+          : "Waiting";
+
+  const detectionOverlayItems: DetectionBoxItem[] = useMemo(() => {
+    if (!preview?.results?.length) return [];
+    const items: DetectionBoxItem[] = [];
+    for (const raw of preview.results as Array<Record<string, unknown>>) {
+      const pred = raw.prediction as
+        | {
+            predictions?: Array<{
+              class_name?: string;
+              confidence?: number;
+              box?: number[];
+            }>;
+          }
+        | undefined;
+      const preds = pred?.predictions;
+      if (!Array.isArray(preds)) continue;
+      const mf = String(raw.modelFilename ?? "model");
+      preds.forEach((p, j) => {
+        const box = p.box;
+        if (!Array.isArray(box) || box.length < 4) return;
+        const [x1, y1, x2, y2] = box.map(Number) as [number, number, number, number];
+        if (![x1, y1, x2, y2].every((n) => Number.isFinite(n))) return;
+        items.push({
+          id: `${mf}-${j}-${p.class_name ?? ""}`,
+          modelFilename: mf,
+          className: String(p.class_name ?? "Unknown"),
+          confidence: typeof p.confidence === "number" ? p.confidence : 0,
+          box: [x1, y1, x2, y2],
+        });
+      });
+    }
+    return items;
+  }, [preview]);
+
+  const runningStageLabel =
+    stage3Status === "active"
+      ? "Stage 3"
+      : stage2Status === "active"
+        ? "Stage 2"
+        : "Stage 1";
+
   return (
     <div className="space-y-6">
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
@@ -613,8 +755,8 @@ export function HelminthPredictPanel({
         </p>
         <p className="mb-4 text-sm text-muted-foreground">
           Stage 1 (fecal detection) runs first. Stage 2 (helminth screening)
-          runs only when Stage 1 is fecal-positive. Stage 3 is displayed for
-          roadmap context.
+          runs only when Stage 1 is fecal-positive. Stage 3 (species detection)
+          runs only when Stage 2 finds helminths.
         </p>
         <PipelineStepper steps={stepperStatuses} />
       </div>
@@ -648,7 +790,7 @@ export function HelminthPredictPanel({
         </div>
         <div>
           <p className="text-base font-medium text-foreground">
-            Stages 1 → 2 pipeline screening
+            Full three-stage pipeline
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
             PNG, JPEG, WebP, or TIFF · max 15 MB
@@ -698,16 +840,19 @@ export function HelminthPredictPanel({
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              {currentStageRef.current === 2 ? "Stage 2" : "Stage 1"} progress:{" "}
-              {progress.done} / {progress.total}
+              {runningStageLabel} progress: {progress.done} / {progress.total}
             </p>
           </div>
         )}
       </div>
 
       <div className="space-y-6">
-          {(stage1Vote || stage2Vote || stage1Status !== "idle" || stage2Status !== "idle") && (
-            <div className="grid gap-4 lg:grid-cols-2">
+          {(stage1Vote ||
+            stage2Vote ||
+            stage1Status !== "idle" ||
+            stage2Status !== "idle" ||
+            stage3Status !== "idle") && (
+            <div className="grid gap-4 lg:grid-cols-3">
               <Card className="border-border/80">
                 <CardHeader>
                   <CardTitle className="text-base">Stage 1 result</CardTitle>
@@ -734,6 +879,17 @@ export function HelminthPredictPanel({
                   <p className="text-lg font-semibold">{stage2ResultLabel}</p>
                 </CardContent>
               </Card>
+              <Card className="border-border/80">
+                <CardHeader>
+                  <CardTitle className="text-base">Stage 3 result</CardTitle>
+                  <CardDescription>
+                    Bounding-box species detection when Stage 2 is helminth-positive.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-lg font-semibold">{stage3ResultLabel}</p>
+                </CardContent>
+              </Card>
             </div>
           )}
 
@@ -758,10 +914,17 @@ export function HelminthPredictPanel({
                       <p className="text-destructive">{entry.error}</p>
                     ) : (
                       <p className="text-muted-foreground">
-                        {classLabel(entry.stage, entry.predictedClass)}
-                        {entry.confidencePct !== null
-                          ? ` · confidence ${entry.confidencePct.toFixed(1)}%`
-                          : ""}
+                        {entry.detail
+                          ? `${entry.detail}${
+                              entry.confidencePct !== null
+                                ? ` · confidence ${entry.confidencePct.toFixed(1)}%`
+                                : ""
+                            }`
+                          : `${classLabel(entry.stage, entry.predictedClass)}${
+                              entry.confidencePct !== null
+                                ? ` · confidence ${entry.confidencePct.toFixed(1)}%`
+                                : ""
+                            }`}
                       </p>
                     )}
                   </div>
@@ -769,6 +932,48 @@ export function HelminthPredictPanel({
               </CardContent>
             </Card>
           )}
+
+          {localImageUrl &&
+            (stage3Status === "active" || stage3Status === "complete") && (
+              <Card className="border-border/80">
+                <CardHeader>
+                  <CardTitle className="text-base">Stage 3 · species on slide</CardTitle>
+                  <CardDescription>
+                    Your upload with model-localized boxes (coordinates match the
+                    image pixels sent to the API).
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <DetectionImagePreview
+                    objectUrl={localImageUrl}
+                    items={detectionOverlayItems}
+                  />
+                  {stage3Status === "complete" && detectionOverlayItems.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No objects above the model confidence threshold.
+                    </p>
+                  ) : null}
+                  {detectionOverlayItems.length > 0 ? (
+                    <ul className="space-y-1.5 text-sm">
+                      {detectionOverlayItems.map((d) => (
+                        <li
+                          key={d.id}
+                          className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-border/50 bg-muted/15 px-2 py-1.5"
+                        >
+                          <span className="font-medium text-foreground">{d.className}</span>
+                          <span className="text-muted-foreground">
+                            {(d.confidence <= 1
+                              ? (d.confidence * 100).toFixed(1)
+                              : d.confidence.toFixed(1))}
+                            % · {shortModelName(d.modelFilename)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </CardContent>
+              </Card>
+            )}
 
           {preview && (preview.results.length > 0 || preview.errors.length > 0) && (
             <Card className="border-border/80">
@@ -784,6 +989,49 @@ export function HelminthPredictPanel({
               <CardContent className="space-y-4">
                 {(preview.results as Array<Record<string, unknown>>).map((row, i) => {
                   const fn = String(row.modelFilename ?? "");
+                  const pred = row.prediction as
+                    | {
+                        predictions?: Array<{
+                          class_name?: string;
+                          confidence?: number;
+                          box?: number[];
+                        }>;
+                      }
+                    | undefined;
+                  if (pred && typeof pred === "object" && "predictions" in pred) {
+                    const list = pred.predictions;
+                    if (Array.isArray(list) && list.length > 0) {
+                      return (
+                        <div
+                          key={`${fn}-det-${i}`}
+                          className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm"
+                        >
+                          <p className="font-medium">{shortModelName(fn)}</p>
+                          <ul className="mt-1 space-y-1 text-muted-foreground">
+                            {list.map((p, j) => (
+                              <li key={j}>
+                                <span className="font-medium text-foreground">
+                                  {String(p.class_name ?? "—")}
+                                </span>
+                                {typeof p.confidence === "number"
+                                  ? ` · ${(p.confidence <= 1 ? p.confidence * 100 : p.confidence).toFixed(1)}%`
+                                  : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        key={`${fn}-det-${i}`}
+                        className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm"
+                      >
+                        <p className="font-medium">{shortModelName(fn)}</p>
+                        <p className="text-muted-foreground">No detections in this result.</p>
+                      </div>
+                    );
+                  }
                   const cls = row.classification as Record<string, unknown> | undefined;
                   const predictedClass =
                     typeof cls?.predicted_class === "number" ? cls.predicted_class : null;

@@ -1,0 +1,88 @@
+"use client";
+
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
+
+export type DetectionBoxItem = {
+  id: string;
+  modelFilename: string;
+  className: string;
+  confidence: number;
+  box: [number, number, number, number];
+};
+
+type DetectionImagePreviewProps = {
+  objectUrl: string | null;
+  items: DetectionBoxItem[];
+  className?: string;
+};
+
+export function DetectionImagePreview({
+  objectUrl,
+  items,
+  className,
+}: DetectionImagePreviewProps) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [layout, setLayout] = useState({ w: 0, h: 0, nw: 1, nh: 1 });
+
+  const measure = useCallback(() => {
+    const img = imgRef.current;
+    if (!img?.naturalWidth) return;
+    setLayout({
+      w: img.getBoundingClientRect().width,
+      h: img.getBoundingClientRect().height,
+      nw: img.naturalWidth,
+      nh: img.naturalHeight,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    measure();
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure, objectUrl]);
+
+  if (!objectUrl) return null;
+
+  const sx = layout.nw > 0 ? layout.w / layout.nw : 1;
+  const sy = layout.nh > 0 ? layout.h / layout.nh : 1;
+
+  return (
+    <div
+      ref={wrapRef}
+      className={cn(
+        "relative w-full overflow-hidden rounded-lg border border-border/60 bg-muted/20",
+        className,
+      )}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- local object URL from user upload */}
+      <img
+        ref={imgRef}
+        src={objectUrl}
+        alt="Uploaded microscopy slide"
+        className="block h-auto max-h-[min(70vh,560px)] w-full object-contain"
+        onLoad={measure}
+      />
+      <div className="pointer-events-none absolute inset-0" aria-hidden>
+        {items.map((d) => {
+          const [x1, y1, x2, y2] = d.box;
+          const left = x1 * sx;
+          const top = y1 * sy;
+          const width = Math.max(0, (x2 - x1) * sx);
+          const height = Math.max(0, (y2 - y1) * sy);
+          return (
+            <div
+              key={d.id}
+              className="absolute box-border border-2 border-amber-500/95 shadow-sm dark:border-amber-400/90"
+              style={{ left, top, width, height }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}

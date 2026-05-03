@@ -30,10 +30,13 @@ export type PredictionPipelineRunRow = {
   image_object_key: string | null;
   stage1_status: StageRunStatus;
   stage2_status: StageRunStatus;
+  stage3_status: StageRunStatus;
   stage1_external_job_id: string | null;
   stage2_external_job_id: string | null;
+  stage3_external_job_id: string | null;
   stage1_result_payload: unknown | null;
   stage2_result_payload: unknown | null;
+  stage3_result_payload: unknown | null;
   stage1_vote_summary: VoteSummary | null;
   stage2_vote_summary: VoteSummary | null;
   final_outcome: string | null;
@@ -67,13 +70,15 @@ export async function insertPipelineRun(params: {
   imageObjectKey?: string | null;
   stage1Status?: StageRunStatus;
   stage2Status?: StageRunStatus;
+  stage3Status?: StageRunStatus;
 }): Promise<void> {
   const sql = getSql();
   const stage1Status = params.stage1Status ?? "processing";
   const stage2Status = params.stage2Status ?? "pending";
+  const stage3Status = params.stage3Status ?? "pending";
   await sql`
     INSERT INTO prediction_pipeline_runs (
-      id, user_id, status, original_filename, image_object_key, stage1_status, stage2_status
+      id, user_id, status, original_filename, image_object_key, stage1_status, stage2_status, stage3_status
     ) VALUES (
       ${params.runId}::uuid,
       ${params.userId},
@@ -81,7 +86,8 @@ export async function insertPipelineRun(params: {
       ${params.originalFilename},
       ${params.imageObjectKey ?? null},
       ${stage1Status},
-      ${stage2Status}
+      ${stage2Status},
+      ${stage3Status}
     )
   `;
 }
@@ -130,6 +136,21 @@ export async function updateStage2ExternalJobId(params: {
   `;
 }
 
+export async function updateStage3ExternalJobId(params: {
+  runId: string;
+  userId: string;
+  externalJobId: string;
+}): Promise<void> {
+  const sql = getSql();
+  await sql`
+    UPDATE prediction_pipeline_runs
+    SET stage3_external_job_id = ${params.externalJobId},
+        stage3_status = 'processing',
+        updated_at = now()
+    WHERE id = ${params.runId}::uuid AND user_id = ${params.userId}
+  `;
+}
+
 export async function saveStage1Result(params: {
   runId: string;
   userId: string;
@@ -147,6 +168,7 @@ export async function saveStage1Result(params: {
           stage1_result_payload = ${payloadJson}::jsonb,
           stage1_vote_summary = ${voteSummaryJson}::jsonb,
           stage2_status = 'pending',
+          stage3_status = 'pending',
           updated_at = now()
       WHERE id = ${params.runId}::uuid AND user_id = ${params.userId}
     `;
@@ -158,6 +180,7 @@ export async function saveStage1Result(params: {
     SET status = 'finished',
         stage1_status = 'finished',
         stage2_status = 'skipped',
+        stage3_status = 'skipped',
         stage1_result_payload = ${payloadJson}::jsonb,
         stage1_vote_summary = ${voteSummaryJson}::jsonb,
         final_outcome = 'non_fecal',
@@ -173,10 +196,27 @@ export async function saveStage2Result(params: {
   payload: unknown;
   voteSummary: VoteSummary;
   finalOutcome: "helminth_positive" | "helminth_negative";
+  /** When true, run stays `processing` and Stage 3 is started by the client. */
+  awaitStage3: boolean;
 }): Promise<void> {
   const sql = getSql();
   const payloadJson = JSON.stringify(params.payload);
   const voteSummaryJson = JSON.stringify(params.voteSummary);
+  if (params.awaitStage3) {
+    await sql`
+      UPDATE prediction_pipeline_runs
+      SET status = 'processing',
+          stage2_status = 'finished',
+          stage2_result_payload = ${payloadJson}::jsonb,
+          stage2_vote_summary = ${voteSummaryJson}::jsonb,
+          final_outcome = ${params.finalOutcome},
+          stage3_status = 'pending',
+          error_message = NULL,
+          updated_at = now()
+      WHERE id = ${params.runId}::uuid AND user_id = ${params.userId}
+    `;
+    return;
+  }
   await sql`
     UPDATE prediction_pipeline_runs
     SET status = 'finished',
@@ -184,6 +224,25 @@ export async function saveStage2Result(params: {
         stage2_result_payload = ${payloadJson}::jsonb,
         stage2_vote_summary = ${voteSummaryJson}::jsonb,
         final_outcome = ${params.finalOutcome},
+        stage3_status = 'skipped',
+        error_message = NULL,
+        updated_at = now()
+    WHERE id = ${params.runId}::uuid AND user_id = ${params.userId}
+  `;
+}
+
+export async function saveStage3Result(params: {
+  runId: string;
+  userId: string;
+  payload: unknown;
+}): Promise<void> {
+  const sql = getSql();
+  const payloadJson = JSON.stringify(params.payload);
+  await sql`
+    UPDATE prediction_pipeline_runs
+    SET status = 'finished',
+        stage3_status = 'finished',
+        stage3_result_payload = ${payloadJson}::jsonb,
         error_message = NULL,
         updated_at = now()
     WHERE id = ${params.runId}::uuid AND user_id = ${params.userId}
@@ -194,7 +253,7 @@ export async function markPipelineRunFailed(params: {
   runId: string;
   userId: string;
   message: string;
-  stage?: 1 | 2;
+  stage?: 1 | 2 | 3;
 }): Promise<void> {
   const sql = getSql();
   const stageStatus =
@@ -202,7 +261,9 @@ export async function markPipelineRunFailed(params: {
       ? sql`stage1_status = 'failed',`
       : params.stage === 2
         ? sql`stage2_status = 'failed',`
-        : sql``;
+        : params.stage === 3
+          ? sql`stage3_status = 'failed',`
+          : sql``;
   await sql`
     UPDATE prediction_pipeline_runs
     SET status = 'failed',
@@ -221,8 +282,10 @@ export async function getPipelineRunForUser(
   const rows = await sql`
     SELECT id, user_id, created_at, updated_at, status, original_filename,
            image_object_key,
-           stage1_status, stage2_status, stage1_external_job_id, stage2_external_job_id,
-           stage1_result_payload, stage2_result_payload, stage1_vote_summary, stage2_vote_summary,
+           stage1_status, stage2_status, stage3_status,
+           stage1_external_job_id, stage2_external_job_id, stage3_external_job_id,
+           stage1_result_payload, stage2_result_payload, stage3_result_payload,
+           stage1_vote_summary, stage2_vote_summary,
            final_outcome, error_message
     FROM prediction_pipeline_runs
     WHERE id = ${runId}::uuid AND user_id = ${userId}
@@ -240,8 +303,10 @@ export async function listPipelineHistory(
   const rows = await sql`
     SELECT id, user_id, created_at, updated_at, status, original_filename,
            image_object_key,
-           stage1_status, stage2_status, stage1_external_job_id, stage2_external_job_id,
-           stage1_result_payload, stage2_result_payload, stage1_vote_summary, stage2_vote_summary,
+           stage1_status, stage2_status, stage3_status,
+           stage1_external_job_id, stage2_external_job_id, stage3_external_job_id,
+           stage1_result_payload, stage2_result_payload, stage3_result_payload,
+           stage1_vote_summary, stage2_vote_summary,
            final_outcome, error_message
     FROM prediction_pipeline_runs
     WHERE user_id = ${userId}

@@ -40,7 +40,13 @@ function summarizePipelineRun(row: PredictionPipelineRunRow): string {
         : vote?.majorityClass === 1
           ? "No helminths"
           : "Unknown";
-    return `Stage 2 result: ${label} (${vote?.positiveVotes ?? 0} helminths votes / ${vote?.negativeVotes ?? 0} non-helminths votes).`;
+    const stage3Tail =
+      row.stage3_status === "finished"
+        ? " Stage 3 species localization complete."
+        : row.stage3_status === "skipped" && vote?.majorityClass === 1
+          ? " Stage 3 skipped (no helminths)."
+          : "";
+    return `Stage 2 result: ${label} (${vote?.positiveVotes ?? 0} helminths votes / ${vote?.negativeVotes ?? 0} non-helminths votes).${stage3Tail}`;
   }
   if (row.stage1_vote_summary) {
     const vote = row.stage1_vote_summary as

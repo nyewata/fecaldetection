@@ -1,9 +1,9 @@
 import {
   HELMINTH_MODEL_FILENAMES,
   HELMINTH_MODEL_INPUT_SIZE,
-  getHelminthApiBaseUrl,
+  getStage2ApiBaseUrl,
 } from "@/lib/helminth-config";
-import { fetchHelminthJobStatus } from "@/lib/helminth-remote";
+import { fetchRemoteJobStatus } from "@/lib/helminth-remote";
 import type { HelminthPredictionRunRow } from "@/lib/prediction-db";
 import {
   assertCanStartRun,
@@ -85,7 +85,7 @@ export async function serviceSubmitHelminthBatch(
   }
   forward.set("image", file, file.name || "upload.jpg");
 
-  const base = getHelminthApiBaseUrl();
+  const base = getStage2ApiBaseUrl();
   let remote: Response;
   try {
     remote = await fetch(`${base}/predict/batch`, {
@@ -168,7 +168,7 @@ export async function serviceFinalizeHelminthRun(
 
   let remote;
   try {
-    remote = await fetchHelminthJobStatus(run.external_job_id);
+    remote = await fetchRemoteJobStatus(getStage2ApiBaseUrl(), run.external_job_id);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Status fetch failed";
     await markRunFailed({ runId, userId, message: msg });
@@ -224,7 +224,7 @@ export async function serviceSyncHelminthRun(
 
   let remote;
   try {
-    remote = await fetchHelminthJobStatus(run.external_job_id);
+    remote = await fetchRemoteJobStatus(getStage2ApiBaseUrl(), run.external_job_id);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Status fetch failed";
     return { ok: false, error: msg };

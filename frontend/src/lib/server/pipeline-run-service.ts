@@ -5,7 +5,11 @@ import {
   STAGE1_MODEL_INPUT_SIZE,
   STAGE2_MODEL_FILENAMES,
   STAGE2_MODEL_INPUT_SIZE,
-  getHelminthApiBaseUrl,
+  STAGE3_MODEL_FILENAMES,
+  STAGE3_MODEL_INPUT_SIZE,
+  getStage1ApiBaseUrl,
+  getStage2ApiBaseUrl,
+  getStage3ApiBaseUrl,
 } from "@/lib/helminth-config";
 import {
   assertCanStartPipelineRun,
@@ -16,9 +20,11 @@ import {
   markPipelineRunFailed,
   saveStage1Result,
   saveStage2Result,
+  saveStage3Result,
   updatePipelineRunImageObjectKey,
   updateStage1ExternalJobId,
   updateStage2ExternalJobId,
+  updateStage3ExternalJobId,
   type PipelineRunStatus,
   type PredictionPipelineRunRow,
   type VoteSummary,
@@ -29,7 +35,7 @@ import {
   uploadPredictionImage,
 } from "@/lib/server/prediction-image-storage";
 import {
-  fetchHelminthJobStatus,
+  fetchRemoteJobStatus,
   type HelminthStatusPayload,
 } from "@/lib/helminth-remote";
 
@@ -42,7 +48,7 @@ const ALLOWED = new Set([
   "image/x-png",
 ]);
 
-type StageNumber = 1 | 2;
+type StageNumber = 1 | 2 | 3;
 
 type StartMode = "pipeline" | "stage2-only";
 
@@ -68,6 +74,16 @@ export type PipelineStage2StartOk = {
   idempotent?: boolean;
 };
 
+export type PipelineStage3StartOk = {
+  ok: true;
+  stage: {
+    stage: 3;
+    externalJobId: string;
+    totalModels: number;
+  };
+  idempotent?: boolean;
+};
+
 export type PipelineFinalizeOk = {
   ok: true;
   runStatus: PipelineRunStatus;
@@ -76,6 +92,7 @@ export type PipelineFinalizeOk = {
   remote?: Record<string, unknown>;
   gateDecision?: "fecal" | "non_fecal";
   awaitingStage2Start?: boolean;
+  awaitingStage3Start?: boolean;
   idempotent?: boolean;
 };
 
@@ -87,6 +104,7 @@ export type PipelineSyncOk = {
   remote?: Record<string, unknown>;
   gateDecision?: "fecal" | "non_fecal";
   awaitingStage2Start?: boolean;
+  awaitingStage3Start?: boolean;
 };
 
 type BatchStartResult = {
@@ -199,6 +217,7 @@ function isStage1Positive(run: PredictionPipelineRunRow): boolean {
 
 function activeStage(run: PredictionPipelineRunRow): StageNumber | null {
   if (run.status !== "processing") return null;
+  if (run.stage3_status === "processing") return 3;
   if (run.stage2_status === "processing") return 2;
   if (run.stage1_status === "processing") return 1;
   return null;
@@ -213,7 +232,24 @@ function shouldAwaitStage2Start(run: PredictionPipelineRunRow): boolean {
   );
 }
 
+function isStage2HelminthPositive(run: PredictionPipelineRunRow): boolean {
+  const summary = run.stage2_vote_summary;
+  if (!summary || typeof summary !== "object") return false;
+  const mc = (summary as VoteSummary).majorityClass;
+  return mc === 0;
+}
+
+function shouldAwaitStage3Start(run: PredictionPipelineRunRow): boolean {
+  return (
+    run.status === "processing" &&
+    run.stage2_status === "finished" &&
+    run.stage3_status === "pending" &&
+    isStage2HelminthPositive(run)
+  );
+}
+
 function persistedPayload(run: PredictionPipelineRunRow): Record<string, unknown> | undefined {
+  if (run.stage3_result_payload) return toRecord(run.stage3_result_payload);
   if (run.stage2_result_payload) return toRecord(run.stage2_result_payload);
   if (run.stage1_result_payload) return toRecord(run.stage1_result_payload);
   return undefined;
@@ -264,6 +300,7 @@ function buildVoteSummary(
 }
 
 async function startRemoteBatch(params: {
+  apiBaseUrl: string;
   file: File;
   modelInputFeatureSize: number;
   modelFilenames: readonly string[];
@@ -275,7 +312,7 @@ async function startRemoteBatch(params: {
   }
   forward.set("image", params.file, params.file.name || "upload.jpg");
 
-  const base = getHelminthApiBaseUrl();
+  const base = params.apiBaseUrl.replace(/\/$/, "");
   let remote: Response;
   try {
     remote = await fetch(`${base}/predict/batch`, {
@@ -314,11 +351,21 @@ async function fetchStageStatus(
   stage: StageNumber,
 ): Promise<HelminthStatusPayload> {
   const externalJobId =
-    stage === 1 ? run.stage1_external_job_id : run.stage2_external_job_id;
+    stage === 1
+      ? run.stage1_external_job_id
+      : stage === 2
+        ? run.stage2_external_job_id
+        : run.stage3_external_job_id;
   if (!externalJobId) {
     throw new Error(`Stage ${stage} has no external job id yet.`);
   }
-  return fetchHelminthJobStatus(externalJobId);
+  const base =
+    stage === 1
+      ? getStage1ApiBaseUrl()
+      : stage === 2
+        ? getStage2ApiBaseUrl()
+        : getStage3ApiBaseUrl();
+  return fetchRemoteJobStatus(base, externalJobId);
 }
 
 async function saveFinishedStage1(params: {
@@ -352,18 +399,39 @@ async function saveFinishedStage2(params: {
   remote: HelminthStatusPayload;
 }): Promise<{
   runStatus: PipelineRunStatus;
+  awaitingStage3Start: boolean;
 }> {
   const voteSummary = buildVoteSummary(params.remote, STAGE2_MODEL_FILENAMES);
   const finalOutcome =
     voteSummary.majorityClass === 0
       ? "helminth_positive"
       : "helminth_negative";
+  const awaitStage3 = finalOutcome === "helminth_positive";
   await saveStage2Result({
     runId: params.run.id,
     userId: params.userId,
     payload: params.remote,
     voteSummary,
     finalOutcome,
+    awaitStage3,
+  });
+  return {
+    runStatus: awaitStage3 ? "processing" : "finished",
+    awaitingStage3Start: awaitStage3,
+  };
+}
+
+async function saveFinishedStage3(params: {
+  run: PredictionPipelineRunRow;
+  userId: string;
+  remote: HelminthStatusPayload;
+}): Promise<{
+  runStatus: PipelineRunStatus;
+}> {
+  await saveStage3Result({
+    runId: params.run.id,
+    userId: params.userId,
+    payload: params.remote,
   });
   return { runStatus: "finished" };
 }
@@ -395,6 +463,7 @@ async function startRun(
     stage === 1 ? STAGE1_MODEL_FILENAMES : HELMINTH_MODEL_FILENAMES;
   const modelInputFeatureSize =
     stage === 1 ? STAGE1_MODEL_INPUT_SIZE : HELMINTH_MODEL_INPUT_SIZE;
+  const apiBaseUrl = stage === 1 ? getStage1ApiBaseUrl() : getStage2ApiBaseUrl();
 
   try {
     await insertPipelineRun({
@@ -404,6 +473,7 @@ async function startRun(
       imageObjectKey: null,
       stage1Status: stage === 1 ? "processing" : "skipped",
       stage2Status: stage === 1 ? "pending" : "processing",
+      stage3Status: stage === 1 ? "pending" : "skipped",
     });
   } catch (reason) {
     return { ok: false, error: dbErrorMessage(reason) };
@@ -438,6 +508,7 @@ async function startRun(
   let batch: BatchStartResult;
   try {
     batch = await startRemoteBatch({
+      apiBaseUrl,
       file,
       modelInputFeatureSize,
       modelFilenames,
@@ -554,6 +625,7 @@ export async function serviceStartPipelineStage2(
   let batch: BatchStartResult;
   try {
     batch = await startRemoteBatch({
+      apiBaseUrl: getStage2ApiBaseUrl(),
       file,
       modelInputFeatureSize: STAGE2_MODEL_INPUT_SIZE,
       modelFilenames: STAGE2_MODEL_FILENAMES,
@@ -596,6 +668,101 @@ export async function serviceStartPipelineStage2(
   };
 }
 
+export async function serviceStartPipelineStage3(
+  userId: string,
+  runId: string,
+  file: File,
+): Promise<PipelineStage3StartOk | PipelineErr> {
+  const validationErr = fileValidationError(file);
+  if (validationErr) {
+    return { ok: false, error: validationErr };
+  }
+
+  const run = await getPipelineRunForUser(runId, userId);
+  if (!run) {
+    return { ok: false, error: "Not found." };
+  }
+
+  if (run.status !== "processing") {
+    return { ok: false, error: "Run is not in processing state." };
+  }
+
+  if (run.stage3_status === "processing" && run.stage3_external_job_id) {
+    return {
+      ok: true,
+      idempotent: true,
+      stage: {
+        stage: 3,
+        externalJobId: run.stage3_external_job_id,
+        totalModels: STAGE3_MODEL_FILENAMES.length,
+      },
+    };
+  }
+
+  if (run.stage3_status === "finished") {
+    return { ok: false, error: "Stage 3 already finished." };
+  }
+
+  if (run.stage3_status === "skipped") {
+    return { ok: false, error: "Stage 3 was skipped for this run." };
+  }
+
+  if (run.stage2_status !== "finished") {
+    return { ok: false, error: "Stage 2 is not complete yet." };
+  }
+  if (!isStage2HelminthPositive(run)) {
+    return {
+      ok: false,
+      error: "Stage 3 cannot start because Stage 2 did not detect helminths.",
+    };
+  }
+
+  let batch: BatchStartResult;
+  try {
+    batch = await startRemoteBatch({
+      apiBaseUrl: getStage3ApiBaseUrl(),
+      file,
+      modelInputFeatureSize: STAGE3_MODEL_INPUT_SIZE,
+      modelFilenames: STAGE3_MODEL_FILENAMES,
+    });
+  } catch (reason) {
+    const message = runError(reason);
+    await markPipelineRunFailed({
+      runId,
+      userId,
+      stage: 3,
+      message,
+    });
+    return { ok: false, error: message };
+  }
+
+  try {
+    await updateStage3ExternalJobId({
+      runId,
+      userId,
+      externalJobId: batch.externalJobId,
+    });
+  } catch (reason) {
+    const message = runError(reason);
+    await markPipelineRunFailed({
+      runId,
+      userId,
+      stage: 3,
+      message: `Could not save stage 3 job id: ${message}`,
+    });
+    return { ok: false, error: "Could not save Stage 3 job id." };
+  }
+
+  return {
+    ok: true,
+    stage: {
+      stage: 3,
+      externalJobId: batch.externalJobId,
+      totalModels: batch.totalModels,
+    },
+  };
+}
+
 export async function serviceFinalizePipelineRun(
   userId: string,
   runId: string,
@@ -623,6 +790,15 @@ export async function serviceFinalizePipelineRun(
 
   const stage = activeStage(run);
   if (!stage) {
+    if (shouldAwaitStage3Start(run)) {
+      return {
+        ok: true,
+        runStatus: "processing",
+        stage: 3,
+        persisted: true,
+        awaitingStage3Start: true,
+      };
+    }
     if (shouldAwaitStage2Start(run)) {
       return {
         ok: true,
@@ -689,15 +865,31 @@ export async function serviceFinalizePipelineRun(
       };
     }
 
-    const stage2 = await saveFinishedStage2({
+    if (stage === 2) {
+      const stage2 = await saveFinishedStage2({
+        run,
+        userId,
+        remote,
+      });
+      return {
+        ok: true,
+        runStatus: stage2.runStatus,
+        stage: 2,
+        persisted: true,
+        remote: remoteObj,
+        awaitingStage3Start: stage2.awaitingStage3Start,
+      };
+    }
+
+    const stage3 = await saveFinishedStage3({
       run,
       userId,
       remote,
     });
     return {
       ok: true,
-      runStatus: stage2.runStatus,
-      stage: 2,
+      runStatus: stage3.runStatus,
+      stage: 3,
       persisted: true,
       remote: remoteObj,
     };
@@ -739,6 +931,15 @@ export async function serviceSyncPipelineRun(
 
   const stage = activeStage(run);
   if (!stage) {
+    if (shouldAwaitStage3Start(run)) {
+      return {
+        ok: true,
+        runStatus: "processing",
+        stage: 3,
+        persisted: true,
+        awaitingStage3Start: true,
+      };
+    }
     if (shouldAwaitStage2Start(run)) {
       return {
         ok: true,
@@ -803,15 +1004,31 @@ export async function serviceSyncPipelineRun(
       };
     }
 
-    const stage2 = await saveFinishedStage2({
+    if (stage === 2) {
+      const stage2 = await saveFinishedStage2({
+        run,
+        userId,
+        remote,
+      });
+      return {
+        ok: true,
+        runStatus: stage2.runStatus,
+        stage: 2,
+        persisted: true,
+        remote: remoteObj,
+        awaitingStage3Start: stage2.awaitingStage3Start,
+      };
+    }
+
+    const stage3 = await saveFinishedStage3({
       run,
       userId,
       remote,
     });
     return {
       ok: true,
-      runStatus: stage2.runStatus,
-      stage: 2,
+      runStatus: stage3.runStatus,
+      stage: 3,
       persisted: true,
       remote: remoteObj,
     };
